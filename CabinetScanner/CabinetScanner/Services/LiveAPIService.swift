@@ -39,7 +39,7 @@ final class LiveAPIService: APIServiceProtocol {
 
         self.encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        encoder.keyEncodingStrategy = .convertToSnakeCase
+        encoder.keyEncodingStrategy = .useDefaultKeys
     }
 
     // MARK: - Manifests
