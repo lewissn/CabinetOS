@@ -44,13 +44,10 @@ final class ScannerViewModel: ObservableObject {
 
     func startScanning() {
         cameraService.delegate = self
-        cameraService.checkPermission()
-
-        // Wait briefly for permission callback, then configure
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            guard let self = self else { return }
-            self.cameraService.configure()
-            self.cameraService.start()
+        Task {
+            await cameraService.checkPermission()
+            cameraService.configure()
+            cameraService.start()
         }
     }
 

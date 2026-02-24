@@ -21,16 +21,13 @@ final class CameraService: NSObject, ObservableObject {
 
     // MARK: - Setup
 
-    func checkPermission() {
+    func checkPermission() async {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
             permissionGranted = true
         case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
-                DispatchQueue.main.async {
-                    self?.permissionGranted = granted
-                }
-            }
+            let granted = await AVCaptureDevice.requestAccess(for: .video)
+            permissionGranted = granted
         default:
             permissionGranted = false
         }
