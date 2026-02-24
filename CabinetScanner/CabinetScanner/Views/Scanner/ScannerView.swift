@@ -94,6 +94,9 @@ struct ScannerView: View {
         .onDisappear {
             viewModel.stopScanning()
         }
+        .onChange(of: viewModel.shouldDismiss) { _, dismiss in
+            if dismiss { onDismiss() }
+        }
         .statusBarHidden()
     }
 }

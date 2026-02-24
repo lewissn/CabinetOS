@@ -13,7 +13,8 @@ final class ScannerViewModel: ObservableObject {
 
     @Published var scanState: ScanState = .scanning(hint: "Scan label — find QR code")
     @Published var lastSuccessLabel: String?
-    @Published var continuousMode: Bool = true
+    @Published var continuousMode: Bool = false
+    @Published var shouldDismiss = false
 
     let boxId: String
     let manifestId: String
@@ -92,12 +93,15 @@ final class ScannerViewModel: ObservableObject {
                 lastSuccessLabel = label
                 scanState = .success(label)
 
-                // After brief success display, return to scanning
                 if continuousMode {
                     try? await Task.sleep(nanoseconds: 800_000_000)
                     assembler.clearCooldown()
                     scanState = .scanning(hint: "Scan next label")
                     isProcessing = false
+                } else {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    stopScanning()
+                    shouldDismiss = true
                 }
             } else {
                 HapticService.error()
