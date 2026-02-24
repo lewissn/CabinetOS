@@ -106,7 +106,7 @@ struct ScanStatusView: View {
             statusIcon
             statusText
         }
-        .font(.subheadline.bold())
+        .font(.subheadline.weight(.bold))
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .background(statusBackground)

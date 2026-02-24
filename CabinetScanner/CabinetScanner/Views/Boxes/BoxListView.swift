@@ -135,7 +135,7 @@ struct BoxRow: View {
         HStack {
             Image(systemName: box.boxType.iconName)
                 .font(.title2)
-                .foregroundStyle(box.isClosed ? .secondary : .blue)
+                .foregroundStyle(box.isClosed ? Color.secondary : Color.blue)
                 .frame(width: 36)
 
             VStack(alignment: .leading, spacing: 4) {

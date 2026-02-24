@@ -173,7 +173,7 @@ struct BoxItemRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(item.displayLabel)
-                .font(.body.bold())
+                .font(.body.weight(.bold))
 
             Text(item.projectName)
                 .font(.caption)

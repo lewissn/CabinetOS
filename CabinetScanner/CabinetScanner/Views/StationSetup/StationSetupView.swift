@@ -14,7 +14,7 @@ struct StationSetupView: View {
                     .foregroundStyle(.blue)
 
                 Text("Packaging Station")
-                    .font(.largeTitle.bold())
+                    .font(.largeTitle.weight(.bold))
 
                 Text("Configure this device for packaging")
                     .font(.subheadline)
@@ -68,7 +68,7 @@ struct StationSetupView: View {
                         Image(systemName: "iphone")
                             .foregroundStyle(.secondary)
                         Text(String(appState.deviceId.prefix(8)) + "...")
-                            .font(.footnote.monospaced())
+                            .font(.system(.footnote, design: .monospaced))
                             .foregroundStyle(.secondary)
                         Spacer()
                     }

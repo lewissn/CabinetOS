@@ -36,7 +36,7 @@ struct SlideToCloseView: View {
         return text
             .foregroundStyle(.orange.opacity(0.6))
             .frame(maxWidth: .infinity)
-            .opacity(1 - (offset / maxOffset))
+            .opacity(1.0 - (offset / maxOffset))
     }
 
     private func filledPortion(maxOffset: CGFloat) -> some View {

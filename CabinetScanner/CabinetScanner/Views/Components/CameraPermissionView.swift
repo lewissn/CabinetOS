@@ -12,7 +12,7 @@ struct CameraPermissionView: View {
                 .foregroundStyle(.secondary)
 
             Text("Camera Access Required")
-                .font(.title2.bold())
+                .font(.title2.weight(.bold))
 
             Text("CabinetScanner needs camera access to scan barcode labels on cabinet parts.")
                 .font(.subheadline)

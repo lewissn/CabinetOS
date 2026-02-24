@@ -6,7 +6,7 @@ struct ToastView: View {
     var body: some View {
         if let text = message {
             Text(text)
-                .font(.subheadline.bold())
+                .font(.subheadline.weight(.bold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
