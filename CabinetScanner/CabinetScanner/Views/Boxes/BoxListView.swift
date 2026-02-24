@@ -11,6 +11,23 @@ struct BoxListView: View {
                 ProgressView("Loading boxes...")
             } else {
                 List {
+                    Section {
+                        Button {
+                            Task { await viewModel.finishConsignment() }
+                        } label: {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                Text("Finish Consignment")
+                            }
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(viewModel.isFinishing)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16))
+                        .listRowBackground(Color.clear)
+                    }
+
                     if !viewModel.openBoxes.isEmpty {
                         Section("Open Boxes") {
                             ForEach(viewModel.openBoxes) { box in
@@ -84,20 +101,6 @@ struct BoxListView: View {
                 }
             }
 
-            ToolbarItem(placement: .bottomBar) {
-                Button {
-                    Task { await viewModel.finishConsignment() }
-                } label: {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill")
-                        Text("Finish Consignment")
-                    }
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(viewModel.isFinishing)
-            }
         }
         .alert("Delete Box?", isPresented: .init(
             get: { boxToDelete != nil },
