@@ -75,7 +75,7 @@ final class DashboardService {
             upcoming.append(UpcomingJob(
                 id: row.stableId,
                 customer: row.customer ?? "Unknown",
-                salesOrder: row.salesOrder ?? "—",
+                salesOrder: row.salesOrderString ?? "—",
                 shippingMethod: row.shippingMethod,
                 dueDate: dueDate
             ))
@@ -122,7 +122,16 @@ final class DashboardService {
             throw DashboardError.httpError(http?.statusCode ?? -1)
         }
 
-        return try JSONDecoder().decode([JobRow].self, from: data)
+        do {
+            return try JSONDecoder().decode([JobRow].self, from: data)
+        } catch {
+            #if DEBUG
+            let preview = String(data: data.prefix(500), encoding: .utf8) ?? "<binary>"
+            print("[DashboardService] Decode failed: \(error)")
+            print("[DashboardService] Response preview: \(preview)")
+            #endif
+            throw error
+        }
     }
 
     private static let isoDateFormatter: ISO8601DateFormatter = {
@@ -133,10 +142,10 @@ final class DashboardService {
 }
 
 private struct JobRow: Decodable {
-    let id: Int?
+    let id: FlexibleID?
     let dueRaw: String?
     let customer: String?
-    let salesOrder: String?
+    let salesOrder: FlexibleString?
     let shippingMethod: String?
 
     enum CodingKeys: String, CodingKey {
@@ -155,9 +164,11 @@ private struct JobRow: Decodable {
     }
 
     var stableId: String {
-        if let id { return String(id) }
-        return "\(customer ?? "")-\(salesOrder ?? "")-\(dueRaw ?? "")"
+        if let id { return id.stringValue }
+        return "\(customer ?? "")-\(salesOrder?.stringValue ?? "")-\(dueRaw ?? "")"
     }
+
+    var salesOrderString: String? { salesOrder?.stringValue }
 
     private static let dateOnly: DateFormatter = {
         let f = DateFormatter()
@@ -171,6 +182,54 @@ private struct JobRow: Decodable {
         f.formatOptions = [.withInternetDateTime]
         return f
     }()
+}
+
+/// Decodes a JSON value that may be an Int, String, or UUID.
+private enum FlexibleID: Decodable {
+    case int(Int)
+    case string(String)
+
+    var stringValue: String {
+        switch self {
+        case .int(let v): return String(v)
+        case .string(let v): return v
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let v = try? container.decode(Int.self) { self = .int(v); return }
+        if let v = try? container.decode(String.self) { self = .string(v); return }
+        throw DecodingError.typeMismatch(
+            FlexibleID.self,
+            .init(codingPath: decoder.codingPath, debugDescription: "Expected Int or String")
+        )
+    }
+}
+
+/// Decodes a value that may arrive as a String or a Number.
+private enum FlexibleString: Decodable {
+    case string(String)
+    case number(Double)
+
+    var stringValue: String {
+        switch self {
+        case .string(let v): return v
+        case .number(let v):
+            if v == v.rounded() { return String(Int(v)) }
+            return String(v)
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let v = try? container.decode(String.self) { self = .string(v); return }
+        if let v = try? container.decode(Double.self) { self = .number(v); return }
+        throw DecodingError.typeMismatch(
+            FlexibleString.self,
+            .init(codingPath: decoder.codingPath, debugDescription: "Expected String or Number")
+        )
+    }
 }
 
 enum DashboardError: LocalizedError {
@@ -269,9 +328,10 @@ struct DashboardView: View {
 
             Spacer()
 
-            Image(systemName: "shippingbox.fill")
-                .font(.system(size: 28))
-                .foregroundStyle(.blue)
+            Image("CabinetLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 36, height: 36)
         }
         .padding(.top, 16)
     }
