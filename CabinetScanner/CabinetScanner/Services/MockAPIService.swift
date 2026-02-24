@@ -71,7 +71,7 @@ final class MockAPIService: APIServiceProtocol {
     func fetchBoxDetail(boxId: String) async throws -> (Box, [BoxItem]) {
         try await simulateDelay()
         guard let box = findBox(boxId) else {
-            throw APIError.httpError(statusCode: 404)
+            throw APIError.httpError(statusCode: 404, serverMessage: nil)
         }
         let items = boxItems[boxId] ?? []
         return (box, items)
@@ -92,7 +92,7 @@ final class MockAPIService: APIServiceProtocol {
     func closeBox(boxId: String) async throws -> Box {
         try await simulateDelay()
         guard let box = findBox(boxId) else {
-            throw APIError.httpError(statusCode: 404)
+            throw APIError.httpError(statusCode: 404, serverMessage: nil)
         }
         let closed = Box(
             id: box.id,
