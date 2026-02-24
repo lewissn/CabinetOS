@@ -90,6 +90,11 @@ final class LiveAPIService: APIServiceProtocol {
         return response.box.toBox()
     }
 
+    func reopenBox(boxId: String, consignmentId: String) async throws {
+        let body = ReopenBoxRequest(boxId: boxId)
+        let _: OpsOkResponse = try await post("/consignments/\(consignmentId)/reopen-box", body: body)
+    }
+
     // MARK: - Items
 
     func scanItem(boxId: String, request: ScanRequest) async throws -> ScanResponse {
@@ -166,6 +171,14 @@ final class LiveAPIService: APIServiceProtocol {
 // MARK: - Request body helpers
 
 private struct EmptyBody: Encodable {}
+
+private struct ReopenBoxRequest: Encodable {
+    let boxId: String
+}
+
+private struct OpsOkResponse: Decodable {
+    let ok: Bool
+}
 
 private struct OpsAddNextBoxRequest: Encodable {
     let type: String  // 'panel' | 'fitting_kit' | 'drawer_runner'
