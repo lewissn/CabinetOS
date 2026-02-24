@@ -84,7 +84,7 @@ struct StatusBadge: View {
 
     var body: some View {
         Text(status == .complete ? "Complete" : "Open")
-            .font(.caption.bold())
+            .font(.caption.weight(.bold))
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(status == .complete ? Color.green.opacity(0.15) : Color.blue.opacity(0.15))

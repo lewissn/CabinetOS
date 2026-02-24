@@ -32,7 +32,7 @@ struct MissingItemsSheet: View {
                                     .foregroundStyle(.red)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Part \(item.partNumber)")
-                                        .font(.body.bold())
+                                        .font(.body.weight(.bold))
                                     Text(item.projectName)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
