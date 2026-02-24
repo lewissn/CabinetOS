@@ -8,10 +8,9 @@ import Foundation
 struct DashboardSummary {
     let dueToday: Int
     let dueTomorrow: Int
-    let overdue: Int
     let upcoming: [UpcomingJob]
 
-    static let empty = DashboardSummary(dueToday: 0, dueTomorrow: 0, overdue: 0, upcoming: [])
+    static let empty = DashboardSummary(dueToday: 0, dueTomorrow: 0, upcoming: [])
 }
 
 struct UpcomingJob: Identifiable {
@@ -20,11 +19,6 @@ struct UpcomingJob: Identifiable {
     let salesOrder: String
     let shippingMethod: String?
     let dueDate: Date
-
-    var isOverdue: Bool {
-        let today = Calendar.london.startOfDay(for: Date())
-        return dueDate < today
-    }
 
     var isDueToday: Bool {
         Calendar.london.isDateInToday(dueDate)
@@ -45,30 +39,28 @@ extension Calendar {
 
 final class DashboardService {
 
-    func fetchSummary(days: Int = 7) async throws -> DashboardSummary {
+    func fetchSummary() async throws -> DashboardSummary {
         let cal = Calendar.london
-        let now = Date()
-        let todayStart = cal.startOfDay(for: now)
+        let todayStart = cal.startOfDay(for: Date())
 
-        guard let windowEnd = cal.date(byAdding: .day, value: days, to: todayStart),
-              let tomorrowStart = cal.date(byAdding: .day, value: 1, to: todayStart),
-              let tomorrowEnd = cal.date(byAdding: .day, value: 2, to: todayStart)
+        guard let tomorrowStart = cal.date(byAdding: .day, value: 1, to: todayStart),
+              let tomorrowEnd = cal.date(byAdding: .day, value: 2, to: todayStart),
+              let windowEnd = cal.date(byAdding: .day, value: 3, to: todayStart)
         else {
             return .empty
         }
 
-        let rows = try await fetchJobs(before: windowEnd)
+        let rows = try await fetchJobs(from: todayStart, before: windowEnd)
 
         var dueToday = 0
         var dueTomorrow = 0
-        var overdue = 0
         var upcoming: [UpcomingJob] = []
 
         for row in rows {
             guard let dueDate = row.parsedDueDate else { continue }
             let dayStart = cal.startOfDay(for: dueDate)
 
-            if dayStart < todayStart { overdue += 1 }
+            if dayStart < todayStart { continue }
             if dayStart >= todayStart && dayStart < tomorrowStart { dueToday += 1 }
             if dayStart >= tomorrowStart && dayStart < tomorrowEnd { dueTomorrow += 1 }
 
@@ -91,20 +83,21 @@ final class DashboardService {
         return DashboardSummary(
             dueToday: dueToday,
             dueTomorrow: dueTomorrow,
-            overdue: overdue,
             upcoming: upcoming
         )
     }
 
     // MARK: PostgREST
 
-    private func fetchJobs(before endDate: Date) async throws -> [JobRow] {
-        let dateString = Self.isoDateFormatter.string(from: endDate)
+    private func fetchJobs(from startDate: Date, before endDate: Date) async throws -> [JobRow] {
+        let startString = Self.isoDateFormatter.string(from: startDate)
+        let endString = Self.isoDateFormatter.string(from: endDate)
 
         var components = URLComponents(string: Configuration.supabaseURL + "/rest/v1/jobs")!
         components.queryItems = [
             URLQueryItem(name: "select", value: "id,due_raw,customer,sales_order,shipping_method"),
-            URLQueryItem(name: "due_raw", value: "lte.\(dateString)"),
+            URLQueryItem(name: "due_raw", value: "gte.\(startString)"),
+            URLQueryItem(name: "due_raw", value: "lt.\(endString)"),
             URLQueryItem(name: "order", value: "due_raw.asc,customer.asc"),
         ]
 
@@ -281,7 +274,7 @@ final class DashboardViewModel: ObservableObject {
     func refresh() async {
         if case .loading = state {} else { state = .loading }
         do {
-            summary = try await service.fetchSummary(days: 7)
+            summary = try await service.fetchSummary()
             state = .loaded
         } catch {
             state = .error(error.localizedDescription)
@@ -339,15 +332,13 @@ struct DashboardView: View {
     // MARK: Stats cards
 
     private var statsRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-                if vm.state == .loading {
-                    ForEach(0..<3, id: \.self) { _ in skeletonCard }
-                } else {
-                    StatCard(title: "Due Today", value: vm.summary.dueToday, subtitle: "Jobs", accentColor: .blue)
-                    StatCard(title: "Due Tomorrow", value: vm.summary.dueTomorrow, subtitle: "Jobs", accentColor: .orange)
-                    StatCard(title: "Overdue", value: vm.summary.overdue, subtitle: "Jobs", accentColor: .red)
-                }
+        HStack(spacing: 12) {
+            if vm.state == .loading {
+                skeletonCard
+                skeletonCard
+            } else {
+                StatCard(title: "Due Today", value: vm.summary.dueToday, subtitle: "Jobs", accentColor: .blue)
+                StatCard(title: "Due Tomorrow", value: vm.summary.dueTomorrow, subtitle: "Jobs", accentColor: .orange)
             }
         }
     }
@@ -389,7 +380,7 @@ struct DashboardView: View {
             Image(systemName: "checkmark.circle")
                 .font(.system(size: 36))
                 .foregroundStyle(.green)
-            Text("Nothing due in the next 7 days.")
+            Text("Nothing due in the next 3 days.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -422,7 +413,8 @@ struct DashboardView: View {
     private var skeletonCard: some View {
         RoundedRectangle(cornerRadius: 18, style: .continuous)
             .fill(.quaternary)
-            .frame(width: 130, height: 100)
+            .frame(maxWidth: .infinity)
+            .frame(height: 100)
     }
 
     private var skeletonRow: some View {
@@ -463,7 +455,7 @@ private struct StatCard: View {
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
-        .frame(minWidth: 120, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
@@ -493,9 +485,7 @@ private struct UpcomingJobRow: View {
 
             Spacer(minLength: 4)
 
-            if job.isOverdue {
-                badge("Overdue", color: .red)
-            } else if job.isDueToday {
+            if job.isDueToday {
                 badge("Today", color: .blue)
             } else {
                 Text(formattedDueDate)
