@@ -113,10 +113,10 @@ final class MockAPIService: APIServiceProtocol {
     func scanItem(boxId: String, request: ScanRequest) async throws -> ScanResponse {
         try await simulateDelay()
 
-        guard let box = findBox(boxId), box.isOpen else {
+        guard let box = findBox(boxId) else {
             return ScanResponse(
                 ok: false, added: nil, boxProgress: nil,
-                code: "BOX_CLOSED", message: "This box is closed",
+                code: "BOX_NOT_FOUND", message: "Box not found",
                 details: nil
             )
         }
