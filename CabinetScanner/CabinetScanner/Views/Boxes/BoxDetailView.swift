@@ -53,6 +53,20 @@ struct BoxDetailView: View {
 
             if viewModel.box.boxType.fixedDimensions == nil {
                 VStack(spacing: 12) {
+                    if viewModel.box.isClosed {
+                        Button {
+                            Task { await viewModel.reopenBox() }
+                        } label: {
+                            Label("Reopen Box", systemImage: "lock.open.fill")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(.orange)
+                                .foregroundStyle(.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
+                    }
+
                     Button {
                         showScanner = true
                     } label: {
@@ -85,6 +99,13 @@ struct BoxDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    if viewModel.box.isClosed && viewModel.box.boxType.fixedDimensions == nil {
+                        Button {
+                            Task { await viewModel.reopenBox() }
+                        } label: {
+                            Label("Reopen Box", systemImage: "lock.open.fill")
+                        }
+                    }
                     Button(role: .destructive) {
                         showDeleteConfirm = true
                     } label: {

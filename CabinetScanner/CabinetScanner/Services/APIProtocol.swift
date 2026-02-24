@@ -13,6 +13,7 @@ protocol APIServiceProtocol {
     func fetchBoxDetail(boxId: String) async throws -> (Box, [BoxItem])
     func deleteBox(boxId: String) async throws
     func closeBox(boxId: String) async throws -> Box
+    func reopenBox(boxId: String, consignmentId: String) async throws
 
     // Items
     func scanItem(boxId: String, request: ScanRequest) async throws -> ScanResponse

@@ -108,6 +108,24 @@ final class MockAPIService: APIServiceProtocol {
         return closed
     }
 
+    func reopenBox(boxId: String, consignmentId: String) async throws {
+        try await simulateDelay()
+        guard let box = findBox(boxId) else {
+            throw APIError.httpError(statusCode: 404, serverMessage: nil)
+        }
+        let reopened = Box(
+            id: box.id,
+            consignmentId: box.consignmentId,
+            boxNumber: box.boxNumber,
+            boxType: box.boxType,
+            status: .open,
+            itemCount: boxItems[boxId]?.count ?? 0,
+            createdAt: box.createdAt,
+            closedAt: nil
+        )
+        replaceBox(reopened)
+    }
+
     // MARK: - Items
 
     func scanItem(boxId: String, request: ScanRequest) async throws -> ScanResponse {

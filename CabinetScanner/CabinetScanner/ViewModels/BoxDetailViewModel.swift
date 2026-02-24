@@ -69,6 +69,21 @@ final class BoxDetailViewModel: ObservableObject {
         }
     }
 
+    func reopenBox() async -> Bool {
+        do {
+            try await api.reopenBox(boxId: box.id, consignmentId: consignmentId)
+            let (updatedBox, _) = try await api.fetchBoxDetail(boxId: box.id)
+            self.box = updatedBox
+            toastMessage = "Box reopened"
+            HapticService.success()
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            HapticService.error()
+            return false
+        }
+    }
+
     func deleteBox() async -> Bool {
         do {
             try await api.deleteBox(boxId: box.id)
