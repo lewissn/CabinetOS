@@ -7,14 +7,14 @@ enum APIMode: String {
 
 struct Configuration {
     // MARK: - Toggle this to switch between mock and live API
-    static var apiMode: APIMode = .mock
+    static var apiMode: APIMode = .live
 
     // MARK: - Ops API Host
     // Dev:  http://localhost:3000
     // Prod: https://ops.thecabinetshop.co.uk  (confirm exact domain)
     // Set host ONLY — no trailing slash, no path prefix.
     // All iOS endpoints live under /api/despatch/ on the Ops server.
-    static var baseURL: String = "http://localhost:3000"
+    static var baseURL: String = "https://ops.thecabinetshop.co.uk"
 
     // MARK: - Supabase (reserved for direct-mode / Realtime in future)
     static var supabaseURL: String = "https://your-project.supabase.co"
