@@ -13,8 +13,11 @@ struct BoxDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Items list
-            if viewModel.items.isEmpty && !viewModel.isLoading {
+            if let dims = viewModel.box.boxType.fixedDimensions {
+                Spacer()
+                fixedBoxInfo(dims)
+                Spacer()
+            } else if viewModel.items.isEmpty && !viewModel.isLoading {
                 Spacer()
                 VStack(spacing: 12) {
                     Image(systemName: "barcode.viewfinder")
@@ -50,49 +53,48 @@ struct BoxDetailView: View {
                 }
             }
 
-            // Bottom action area
-            VStack(spacing: 12) {
-                if viewModel.box.isOpen {
-                    // Scan button
-                    Button {
-                        showScanner = true
-                    } label: {
-                        Label("Scan Label", systemImage: "barcode.viewfinder")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(.blue)
-                            .foregroundStyle(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                    }
+            if viewModel.box.boxType.fixedDimensions == nil {
+                VStack(spacing: 12) {
+                    if viewModel.box.isOpen {
+                        Button {
+                            showScanner = true
+                        } label: {
+                            Label("Scan Label", systemImage: "barcode.viewfinder")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(.blue)
+                                .foregroundStyle(.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
 
-                    // Close box slider
-                    if !viewModel.items.isEmpty {
-                        SlideToCloseView(
-                            onClose: {
-                                Task {
-                                    let closed = await viewModel.closeBox()
-                                    if closed {
-                                        // Stay on detail, just update state
+                        if !viewModel.items.isEmpty {
+                            SlideToCloseView(
+                                onClose: {
+                                    Task {
+                                        let closed = await viewModel.closeBox()
+                                        if closed {
+                                            // Stay on detail, just update state
+                                        }
                                     }
                                 }
-                            }
-                        )
+                            )
+                        }
+                    } else {
+                        HStack {
+                            Image(systemName: "lock.fill")
+                            Text("Box Closed")
+                                .font(.headline)
+                        }
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(.fill.quaternary)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
                     }
-                } else {
-                    HStack {
-                        Image(systemName: "lock.fill")
-                        Text("Box Closed")
-                            .font(.headline)
-                    }
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(.fill.quaternary)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
+                .padding()
             }
-            .padding()
         }
         .navigationTitle("\(viewModel.box.boxType.displayName) #\(viewModel.box.boxNumber)")
         .toolbar {
@@ -163,6 +165,35 @@ struct BoxDetailView: View {
         }
         .task {
             await viewModel.loadBoxDetail()
+        }
+    }
+
+    private func fixedBoxInfo(_ dims: Box.BoxType.Dimensions) -> some View {
+        VStack(spacing: 20) {
+            Image(systemName: viewModel.box.boxType.iconName)
+                .font(.system(size: 48))
+                .foregroundStyle(.secondary)
+
+            Text(viewModel.box.boxType.displayName)
+                .font(.title2.weight(.bold))
+
+            VStack(spacing: 8) {
+                Label(dims.displaySize, systemImage: "ruler")
+                Label(dims.displayWeight, systemImage: "scalemass")
+            }
+            .font(.body)
+            .foregroundStyle(.secondary)
+
+            HStack {
+                Image(systemName: "lock.fill")
+                Text("Completed")
+            }
+            .font(.subheadline.weight(.bold))
+            .foregroundStyle(.green)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(.green.opacity(0.15))
+            .clipShape(Capsule())
         }
     }
 }

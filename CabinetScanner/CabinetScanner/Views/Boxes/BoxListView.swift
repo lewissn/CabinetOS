@@ -142,9 +142,15 @@ struct BoxRow: View {
                 Text("\(box.boxType.displayName) #\(box.boxNumber)")
                     .font(.headline)
 
-                Text("\(box.itemCount) items")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                if let dims = box.boxType.fixedDimensions {
+                    Text("\(dims.displaySize) · \(dims.displayWeight)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("\(box.itemCount) items")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Spacer()

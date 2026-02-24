@@ -37,7 +37,10 @@ final class BoxListViewModel: ObservableObject {
 
     func createBox(type: Box.BoxType) async {
         do {
-            let box = try await api.createBox(consignmentId: consignment.id, boxType: type)
+            var box = try await api.createBox(consignmentId: consignment.id, boxType: type)
+            if type.isAutoClose {
+                box = try await api.closeBox(boxId: box.id)
+            }
             boxes.append(box)
             toastMessage = "\(type.displayName) #\(box.boxNumber) created"
             HapticService.success()

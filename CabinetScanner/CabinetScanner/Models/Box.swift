@@ -34,6 +34,38 @@ struct Box: Identifiable, Codable, Hashable {
         var isManualEntry: Bool {
             self != .panel
         }
+
+        var isAutoClose: Bool {
+            self != .panel
+        }
+
+        struct Dimensions {
+            let lengthMM: Int
+            let widthMM: Int
+            let heightMM: Int
+            let weightKG: Double
+
+            var displaySize: String {
+                "\(lengthMM) x \(widthMM) x \(heightMM) mm"
+            }
+
+            var displayWeight: String {
+                weightKG.truncatingRemainder(dividingBy: 1) == 0
+                    ? "\(Int(weightKG)) kg"
+                    : String(format: "%.1f kg", weightKG)
+            }
+        }
+
+        var fixedDimensions: Dimensions? {
+            switch self {
+            case .panel:
+                return nil
+            case .fittingKit:
+                return Dimensions(lengthMM: 250, widthMM: 150, heightMM: 100, weightKG: 2)
+            case .drawerRunner:
+                return Dimensions(lengthMM: 400, widthMM: 200, heightMM: 200, weightKG: 5)
+            }
+        }
     }
 
     enum BoxStatus: String, Codable {
