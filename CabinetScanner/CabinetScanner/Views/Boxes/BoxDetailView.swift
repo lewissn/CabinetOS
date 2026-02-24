@@ -38,12 +38,10 @@ struct BoxDetailView: View {
                     ForEach(viewModel.items) { item in
                         BoxItemRow(item: item)
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                if viewModel.box.isOpen {
-                                    Button(role: .destructive) {
-                                        itemToDelete = item
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
+                                Button(role: .destructive) {
+                                    itemToDelete = item
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
                                 }
                             }
                     }
@@ -55,42 +53,29 @@ struct BoxDetailView: View {
 
             if viewModel.box.boxType.fixedDimensions == nil {
                 VStack(spacing: 12) {
-                    if viewModel.box.isOpen {
-                        Button {
-                            showScanner = true
-                        } label: {
-                            Label("Scan Label", systemImage: "barcode.viewfinder")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(.blue)
-                                .foregroundStyle(.white)
-                                .clipShape(RoundedRectangle(cornerRadius: 14))
-                        }
+                    Button {
+                        showScanner = true
+                    } label: {
+                        Label("Scan Label", systemImage: "barcode.viewfinder")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(.blue)
+                            .foregroundStyle(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
 
-                        if !viewModel.items.isEmpty {
-                            SlideToCloseView(
-                                onClose: {
-                                    Task {
-                                        let closed = await viewModel.closeBox()
-                                        if closed {
-                                            // Stay on detail, just update state
-                                        }
+                    if viewModel.box.isOpen && !viewModel.items.isEmpty {
+                        SlideToCloseView(
+                            onClose: {
+                                Task {
+                                    let closed = await viewModel.closeBox()
+                                    if closed {
+                                        // Stay on detail, just update state
                                     }
                                 }
-                            )
-                        }
-                    } else {
-                        HStack {
-                            Image(systemName: "lock.fill")
-                            Text("Box Closed")
-                                .font(.headline)
-                        }
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(.fill.quaternary)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                            }
+                        )
                     }
                 }
                 .padding()
@@ -98,17 +83,15 @@ struct BoxDetailView: View {
         }
         .navigationTitle("\(viewModel.box.boxType.displayName) #\(viewModel.box.boxNumber)")
         .toolbar {
-            if viewModel.box.isOpen {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button(role: .destructive) {
-                            showDeleteConfirm = true
-                        } label: {
-                            Label("Delete Box", systemImage: "trash")
-                        }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
                     } label: {
-                        Image(systemName: "ellipsis.circle")
+                        Label("Delete Box", systemImage: "trash")
                     }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
             }
         }
