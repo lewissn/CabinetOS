@@ -17,8 +17,8 @@ struct Configuration {
     static var baseURL: String = "https://ops.thecabinetshop.co.uk"
 
     // MARK: - Supabase (reserved for direct-mode / Realtime in future)
-    static var supabaseURL: String = "https://your-project.supabase.co"
-    static var supabaseAnonKey: String = "your-anon-key"
+    static var supabaseURL: String = "https://boxzppyquduaqduamchi.supabase.co"
+    static var supabaseAnonKey: String = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJveHpwcHlxdWR1YXFkdWFtY2hpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk3NzAzNjMsImV4cCI6MjA4NTM0NjM2M30.YDRqPmkPzQH3sWFN4SST1dfz-1XI2paXT3l7Q3suFr8"
 
     // MARK: - Realtime
     // false = polling fallback (MVP); true = Supabase Realtime (future)
