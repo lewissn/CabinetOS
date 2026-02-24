@@ -1,0 +1,549 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* AppState.swift */; };
+		A10000000000000000000002 /* CabinetScannerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* CabinetScannerApp.swift */; };
+		A10000000000000000000003 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* RootView.swift */; };
+		A10000000000000000000004 /* Box.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* Box.swift */; };
+		A10000000000000000000005 /* BoxItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* BoxItem.swift */; };
+		A10000000000000000000006 /* Consignment.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* Consignment.swift */; };
+		A10000000000000000000007 /* Manifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* Manifest.swift */; };
+		A10000000000000000000008 /* ScanResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* ScanResult.swift */; };
+		A10000000000000000000009 /* APIProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* APIProtocol.swift */; };
+		A1000000000000000000000A /* CameraService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000A /* CameraService.swift */; };
+		A1000000000000000000000B /* Configuration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000B /* Configuration.swift */; };
+		A1000000000000000000000C /* HapticService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000C /* HapticService.swift */; };
+		A1000000000000000000000D /* LiveAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000D /* LiveAPIService.swift */; };
+		A1000000000000000000000E /* MockAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* MockAPIService.swift */; };
+		A1000000000000000000000F /* MockData.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* MockData.swift */; };
+		A10000000000000000000010 /* RealtimeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* RealtimeService.swift */; };
+		A10000000000000000000011 /* ScanAssembler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* ScanAssembler.swift */; };
+		A10000000000000000000012 /* ServiceContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* ServiceContainer.swift */; };
+		A10000000000000000000013 /* BoxDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000013 /* BoxDetailViewModel.swift */; };
+		A10000000000000000000014 /* BoxListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* BoxListViewModel.swift */; };
+		A10000000000000000000015 /* ConsignmentListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000015 /* ConsignmentListViewModel.swift */; };
+		A10000000000000000000016 /* ManifestListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000016 /* ManifestListViewModel.swift */; };
+		A10000000000000000000017 /* ScannerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000017 /* ScannerViewModel.swift */; };
+		A10000000000000000000018 /* BoxDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000018 /* BoxDetailView.swift */; };
+		A10000000000000000000019 /* BoxListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000019 /* BoxListView.swift */; };
+		A1000000000000000000001A /* MissingItemsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001A /* MissingItemsSheet.swift */; };
+		A1000000000000000000001B /* CameraPermissionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001B /* CameraPermissionView.swift */; };
+		A1000000000000000000001C /* SlideToCloseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001C /* SlideToCloseView.swift */; };
+		A1000000000000000000001D /* ToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001D /* ToastView.swift */; };
+		A1000000000000000000001E /* ConsignmentListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001E /* ConsignmentListView.swift */; };
+		A1000000000000000000001F /* ManifestListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001F /* ManifestListView.swift */; };
+		A10000000000000000000020 /* CameraPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* CameraPreviewView.swift */; };
+		A10000000000000000000021 /* ScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* ScannerView.swift */; };
+		A10000000000000000000022 /* ScanOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000022 /* ScanOverlayView.swift */; };
+		A10000000000000000000023 /* StationSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000023 /* StationSetupView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		B10000000000000000000001 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		B10000000000000000000002 /* CabinetScannerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CabinetScannerApp.swift; sourceTree = "<group>"; };
+		B10000000000000000000003 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		B10000000000000000000004 /* Box.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Box.swift; sourceTree = "<group>"; };
+		B10000000000000000000005 /* BoxItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoxItem.swift; sourceTree = "<group>"; };
+		B10000000000000000000006 /* Consignment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Consignment.swift; sourceTree = "<group>"; };
+		B10000000000000000000007 /* Manifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Manifest.swift; sourceTree = "<group>"; };
+		B10000000000000000000008 /* ScanResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanResult.swift; sourceTree = "<group>"; };
+		B10000000000000000000009 /* APIProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIProtocol.swift; sourceTree = "<group>"; };
+		B1000000000000000000000A /* CameraService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraService.swift; sourceTree = "<group>"; };
+		B1000000000000000000000B /* Configuration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Configuration.swift; sourceTree = "<group>"; };
+		B1000000000000000000000C /* HapticService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticService.swift; sourceTree = "<group>"; };
+		B1000000000000000000000D /* LiveAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveAPIService.swift; sourceTree = "<group>"; };
+		B1000000000000000000000E /* MockAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockAPIService.swift; sourceTree = "<group>"; };
+		B1000000000000000000000F /* MockData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockData.swift; sourceTree = "<group>"; };
+		B10000000000000000000010 /* RealtimeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeService.swift; sourceTree = "<group>"; };
+		B10000000000000000000011 /* ScanAssembler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanAssembler.swift; sourceTree = "<group>"; };
+		B10000000000000000000012 /* ServiceContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceContainer.swift; sourceTree = "<group>"; };
+		B10000000000000000000013 /* BoxDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoxDetailViewModel.swift; sourceTree = "<group>"; };
+		B10000000000000000000014 /* BoxListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoxListViewModel.swift; sourceTree = "<group>"; };
+		B10000000000000000000015 /* ConsignmentListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsignmentListViewModel.swift; sourceTree = "<group>"; };
+		B10000000000000000000016 /* ManifestListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManifestListViewModel.swift; sourceTree = "<group>"; };
+		B10000000000000000000017 /* ScannerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerViewModel.swift; sourceTree = "<group>"; };
+		B10000000000000000000018 /* BoxDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoxDetailView.swift; sourceTree = "<group>"; };
+		B10000000000000000000019 /* BoxListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoxListView.swift; sourceTree = "<group>"; };
+		B1000000000000000000001A /* MissingItemsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MissingItemsSheet.swift; sourceTree = "<group>"; };
+		B1000000000000000000001B /* CameraPermissionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPermissionView.swift; sourceTree = "<group>"; };
+		B1000000000000000000001C /* SlideToCloseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideToCloseView.swift; sourceTree = "<group>"; };
+		B1000000000000000000001D /* ToastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastView.swift; sourceTree = "<group>"; };
+		B1000000000000000000001E /* ConsignmentListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsignmentListView.swift; sourceTree = "<group>"; };
+		B1000000000000000000001F /* ManifestListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManifestListView.swift; sourceTree = "<group>"; };
+		B10000000000000000000020 /* CameraPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreviewView.swift; sourceTree = "<group>"; };
+		B10000000000000000000021 /* ScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerView.swift; sourceTree = "<group>"; };
+		B10000000000000000000022 /* ScanOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanOverlayView.swift; sourceTree = "<group>"; };
+		B10000000000000000000023 /* StationSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationSetupView.swift; sourceTree = "<group>"; };
+		C10000000000000000000001 /* CabinetScanner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CabinetScanner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D10000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		E10000000000000000000001 /* = CabinetScanner */ = {
+			isa = PBXGroup;
+			children = (
+				E10000000000000000000002 /* CabinetScanner */,
+				E10000000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		E10000000000000000000002 /* CabinetScanner */ = {
+			isa = PBXGroup;
+			children = (
+				E10000000000000000000004 /* App */,
+				E10000000000000000000005 /* Models */,
+				E10000000000000000000006 /* Services */,
+				E10000000000000000000007 /* ViewModels */,
+				E10000000000000000000008 /* Views */,
+			);
+			path = CabinetScanner;
+			sourceTree = "<group>";
+		};
+		E10000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				C10000000000000000000001 /* CabinetScanner.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		E10000000000000000000004 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000001 /* AppState.swift */,
+				B10000000000000000000002 /* CabinetScannerApp.swift */,
+				B10000000000000000000003 /* RootView.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		E10000000000000000000005 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000004 /* Box.swift */,
+				B10000000000000000000005 /* BoxItem.swift */,
+				B10000000000000000000006 /* Consignment.swift */,
+				B10000000000000000000007 /* Manifest.swift */,
+				B10000000000000000000008 /* ScanResult.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		E10000000000000000000006 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000009 /* APIProtocol.swift */,
+				B1000000000000000000000A /* CameraService.swift */,
+				B1000000000000000000000B /* Configuration.swift */,
+				B1000000000000000000000C /* HapticService.swift */,
+				B1000000000000000000000D /* LiveAPIService.swift */,
+				B1000000000000000000000E /* MockAPIService.swift */,
+				B1000000000000000000000F /* MockData.swift */,
+				B10000000000000000000010 /* RealtimeService.swift */,
+				B10000000000000000000011 /* ScanAssembler.swift */,
+				B10000000000000000000012 /* ServiceContainer.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		E10000000000000000000007 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000013 /* BoxDetailViewModel.swift */,
+				B10000000000000000000014 /* BoxListViewModel.swift */,
+				B10000000000000000000015 /* ConsignmentListViewModel.swift */,
+				B10000000000000000000016 /* ManifestListViewModel.swift */,
+				B10000000000000000000017 /* ScannerViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		E10000000000000000000008 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				E10000000000000000000009 /* Boxes */,
+				E1000000000000000000000A /* Components */,
+				E1000000000000000000000B /* Consignments */,
+				E1000000000000000000000C /* Manifests */,
+				E1000000000000000000000D /* Scanner */,
+				E1000000000000000000000E /* StationSetup */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		E10000000000000000000009 /* Boxes */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000018 /* BoxDetailView.swift */,
+				B10000000000000000000019 /* BoxListView.swift */,
+				B1000000000000000000001A /* MissingItemsSheet.swift */,
+			);
+			path = Boxes;
+			sourceTree = "<group>";
+		};
+		E1000000000000000000000A /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				B1000000000000000000001B /* CameraPermissionView.swift */,
+				B1000000000000000000001C /* SlideToCloseView.swift */,
+				B1000000000000000000001D /* ToastView.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		E1000000000000000000000B /* Consignments */ = {
+			isa = PBXGroup;
+			children = (
+				B1000000000000000000001E /* ConsignmentListView.swift */,
+			);
+			path = Consignments;
+			sourceTree = "<group>";
+		};
+		E1000000000000000000000C /* Manifests */ = {
+			isa = PBXGroup;
+			children = (
+				B1000000000000000000001F /* ManifestListView.swift */,
+			);
+			path = Manifests;
+			sourceTree = "<group>";
+		};
+		E1000000000000000000000D /* Scanner */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000020 /* CameraPreviewView.swift */,
+				B10000000000000000000021 /* ScannerView.swift */,
+				B10000000000000000000022 /* ScanOverlayView.swift */,
+			);
+			path = Scanner;
+			sourceTree = "<group>";
+		};
+		E1000000000000000000000E /* StationSetup */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000023 /* StationSetupView.swift */,
+			);
+			path = StationSetup;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		F10000000000000000000001 /* CabinetScanner */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F10000000000000000000004 /* Build configuration list for PBXNativeTarget "CabinetScanner" */;
+			buildPhases = (
+				F10000000000000000000002 /* Sources */,
+				D10000000000000000000001 /* Frameworks */,
+				F10000000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CabinetScanner;
+			productName = CabinetScanner;
+			productReference = C10000000000000000000001 /* CabinetScanner.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F10000000000000000000005 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					F10000000000000000000001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = F10000000000000000000006 /* Build configuration list for PBXProject "CabinetScanner" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = E10000000000000000000001 /* = CabinetScanner */;
+			productRefGroup = E10000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				F10000000000000000000001 /* CabinetScanner */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F10000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		F10000000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* AppState.swift in Sources */,
+				A10000000000000000000002 /* CabinetScannerApp.swift in Sources */,
+				A10000000000000000000003 /* RootView.swift in Sources */,
+				A10000000000000000000004 /* Box.swift in Sources */,
+				A10000000000000000000005 /* BoxItem.swift in Sources */,
+				A10000000000000000000006 /* Consignment.swift in Sources */,
+				A10000000000000000000007 /* Manifest.swift in Sources */,
+				A10000000000000000000008 /* ScanResult.swift in Sources */,
+				A10000000000000000000009 /* APIProtocol.swift in Sources */,
+				A1000000000000000000000A /* CameraService.swift in Sources */,
+				A1000000000000000000000B /* Configuration.swift in Sources */,
+				A1000000000000000000000C /* HapticService.swift in Sources */,
+				A1000000000000000000000D /* LiveAPIService.swift in Sources */,
+				A1000000000000000000000E /* MockAPIService.swift in Sources */,
+				A1000000000000000000000F /* MockData.swift in Sources */,
+				A10000000000000000000010 /* RealtimeService.swift in Sources */,
+				A10000000000000000000011 /* ScanAssembler.swift in Sources */,
+				A10000000000000000000012 /* ServiceContainer.swift in Sources */,
+				A10000000000000000000013 /* BoxDetailViewModel.swift in Sources */,
+				A10000000000000000000014 /* BoxListViewModel.swift in Sources */,
+				A10000000000000000000015 /* ConsignmentListViewModel.swift in Sources */,
+				A10000000000000000000016 /* ManifestListViewModel.swift in Sources */,
+				A10000000000000000000017 /* ScannerViewModel.swift in Sources */,
+				A10000000000000000000018 /* BoxDetailView.swift in Sources */,
+				A10000000000000000000019 /* BoxListView.swift in Sources */,
+				A1000000000000000000001A /* MissingItemsSheet.swift in Sources */,
+				A1000000000000000000001B /* CameraPermissionView.swift in Sources */,
+				A1000000000000000000001C /* SlideToCloseView.swift in Sources */,
+				A1000000000000000000001D /* ToastView.swift in Sources */,
+				A1000000000000000000001E /* ConsignmentListView.swift in Sources */,
+				A1000000000000000000001F /* ManifestListView.swift in Sources */,
+				A10000000000000000000020 /* CameraPreviewView.swift in Sources */,
+				A10000000000000000000021 /* ScannerView.swift in Sources */,
+				A10000000000000000000022 /* ScanOverlayView.swift in Sources */,
+				A10000000000000000000023 /* StationSetupView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		F10000000000000000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		F10000000000000000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		F10000000000000000000009 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "CabinetScanner needs camera access to scan barcode labels on cabinet parts.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cabinetOS.CabinetScanner;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		F1000000000000000000000A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "CabinetScanner needs camera access to scan barcode labels on cabinet parts.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cabinetOS.CabinetScanner;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		F10000000000000000000006 /* Build configuration list for PBXProject "CabinetScanner" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F10000000000000000000007 /* Debug */,
+				F10000000000000000000008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F10000000000000000000004 /* Build configuration list for PBXNativeTarget "CabinetScanner" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F10000000000000000000009 /* Debug */,
+				F1000000000000000000000A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = F10000000000000000000005 /* Project object */;
+}
