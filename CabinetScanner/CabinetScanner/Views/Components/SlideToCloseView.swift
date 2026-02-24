@@ -32,8 +32,8 @@ struct SlideToCloseView: View {
 
     private func label(maxOffset: CGFloat) -> some View {
         Text("Slide to close box")
-            .font(.subheadline.weight(.bold))
             .foregroundStyle(.orange.opacity(0.6))
+            .font(.subheadline.weight(.bold))
             .frame(maxWidth: .infinity)
             .opacity(1 - (offset / maxOffset))
     }
