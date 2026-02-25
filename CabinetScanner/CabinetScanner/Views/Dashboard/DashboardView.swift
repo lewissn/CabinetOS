@@ -402,6 +402,11 @@ struct DashboardView: View {
 
     // MARK: Courier summary
 
+    private let tileColumns = [
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12)
+    ]
+
     private var courierSummarySection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Dispatch Intelligence", systemImage: "shippingbox")
@@ -409,23 +414,19 @@ struct DashboardView: View {
                 .fontWeight(.semibold)
 
             if vm.state == .loading {
-                ForEach(0..<3, id: \.self) { _ in skeletonRow }
+                LazyVGrid(columns: tileColumns, spacing: 12) {
+                    ForEach(0..<4, id: \.self) { _ in skeletonCard }
+                }
             } else if case .error(let msg) = vm.state {
                 errorCard(msg)
             } else if vm.intelligence.courierGroups.isEmpty {
                 emptyState
             } else {
-                VStack(spacing: 0) {
+                LazyVGrid(columns: tileColumns, spacing: 12) {
                     ForEach(vm.intelligence.courierGroups) { group in
-                        CourierGroupRow(group: group)
-                        if group.id != vm.intelligence.courierGroups.last?.id {
-                            Divider().padding(.leading, 4)
-                        }
+                        CourierGroupTile(group: group)
                     }
                 }
-                .padding(16)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
             }
         }
     }
@@ -571,37 +572,47 @@ private struct StatCard: View {
 }
 
 // ============================================================
-// MARK: - Courier Group Row
+// MARK: - Courier Group Tile
 // ============================================================
 
-private struct CourierGroupRow: View {
+private struct CourierGroupTile: View {
     let group: CourierGroup
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             Text(group.shippingMethod)
-                .font(.body)
+                .font(.subheadline)
                 .fontWeight(.semibold)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
 
-            if group.dueToday > 0 {
-                HStack(spacing: 6) {
-                    Circle().fill(.blue).frame(width: 6, height: 6)
-                    Text("Jobs due today: \(group.dueToday)")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
+            Spacer(minLength: 0)
+
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text("\(group.dueToday)")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(.blue)
+                Text("today")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             if group.dueTomorrow > 0 {
-                HStack(spacing: 6) {
-                    Circle().fill(.orange).frame(width: 6, height: 6)
-                    Text("Jobs due tomorrow: \(group.dueTomorrow)")
-                        .font(.subheadline)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("\(group.dueTomorrow)")
+                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.orange)
+                    Text("tomorrow")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
         }
-        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .frame(minHeight: 120)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.05), radius: 6, y: 3)
     }
 }
 
