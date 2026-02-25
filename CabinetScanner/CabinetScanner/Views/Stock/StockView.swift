@@ -102,7 +102,7 @@ private struct PurchaseItemBody: Encodable {
 // MARK: - Service
 // ============================================================
 
-final class StockService {
+private final class StockService {
 
     func fetchPanelNames() async throws -> [String] {
         let data = try await supabaseGet(
