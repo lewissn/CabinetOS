@@ -21,6 +21,8 @@ CREATE POLICY "panel_stock_all_access"
     USING (true)
     WITH CHECK (true);
 
+GRANT SELECT, INSERT, UPDATE, DELETE ON panel_stock TO anon, authenticated, service_role;
+
 
 -- 2. Purchase list table
 -- Simple shopping list – no workflow, no status tracking.
@@ -39,6 +41,8 @@ CREATE POLICY "purchase_list_all_access"
     ON purchase_list FOR ALL
     USING (true)
     WITH CHECK (true);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON purchase_list TO anon, authenticated, service_role;
 
 
 -- 3. Ensure jobs table has postcode column (safe to run if it already exists)

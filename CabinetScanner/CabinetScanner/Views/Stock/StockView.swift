@@ -189,7 +189,7 @@ private final class StockService {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        try validate(response)
+        try validate(response, data: data)
         return data
     }
 
@@ -208,7 +208,7 @@ private final class StockService {
         for (k, v) in extraHeaders { request.setValue(v, forHTTPHeaderField: k) }
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        try validate(response)
+        try validate(response, data: data)
         return data
     }
 
@@ -228,8 +228,8 @@ private final class StockService {
         request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
         request.httpBody = body
 
-        let (_, response) = try await URLSession.shared.data(for: request)
-        try validate(response)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validate(response, data: data)
     }
 
     private func supabaseDelete(table: String, filter: String) async throws {
@@ -245,8 +245,8 @@ private final class StockService {
         request.httpMethod = "DELETE"
         applyAuth(&request)
 
-        let (_, response) = try await URLSession.shared.data(for: request)
-        try validate(response)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validate(response, data: data)
     }
 
     private func applyAuth(_ request: inout URLRequest) {
@@ -254,22 +254,26 @@ private final class StockService {
         request.setValue("Bearer \(Configuration.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
     }
 
-    private func validate(_ response: URLResponse) throws {
+    private func validate(_ response: URLResponse, data: Data) throws {
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-            throw StockError.httpError(code)
+            let body = String(data: data.prefix(500), encoding: .utf8) ?? ""
+            throw StockError.httpError(code, detail: body)
         }
     }
 }
 
 enum StockError: LocalizedError {
     case badURL
-    case httpError(Int)
+    case httpError(Int, detail: String)
 
     var errorDescription: String? {
         switch self {
-        case .badURL:              return "Invalid Supabase URL configuration."
-        case .httpError(let code): return "Server returned HTTP \(code)."
+        case .badURL:
+            return "Invalid Supabase URL configuration."
+        case .httpError(let code, let detail):
+            if detail.isEmpty { return "Server returned HTTP \(code)." }
+            return "HTTP \(code): \(detail)"
         }
     }
 }
