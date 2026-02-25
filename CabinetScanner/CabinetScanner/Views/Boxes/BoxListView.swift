@@ -74,7 +74,9 @@ struct BoxListView: View {
                 viewModel: BoxDetailViewModel(
                     box: box,
                     manifestId: viewModel.manifestId,
-                    consignmentId: viewModel.consignment.id
+                    consignmentId: viewModel.consignment.id,
+                    customerName: viewModel.consignment.customerName,
+                    manifestName: viewModel.manifestName
                 )
             )
         }

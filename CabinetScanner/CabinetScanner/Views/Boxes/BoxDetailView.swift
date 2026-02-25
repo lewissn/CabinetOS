@@ -99,6 +99,12 @@ struct BoxDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    Button {
+                        printBoxLabel()
+                    } label: {
+                        Label("Print Label", systemImage: "printer")
+                    }
+
                     if viewModel.box.isClosed && viewModel.box.boxType.fixedDimensions == nil {
                         Button {
                             Task { await viewModel.reopenBox() }
@@ -172,6 +178,37 @@ struct BoxDetailView: View {
         }
     }
 
+    private func printBoxLabel() {
+        let labelView = BoxLabelView(
+            customerName: viewModel.customerName,
+            boxType: viewModel.box.boxType.displayName,
+            boxNumber: viewModel.box.boxNumber,
+            shippingMethod: viewModel.shippingMethod
+        )
+
+        let mmToPoints: CGFloat = 72.0 / 25.4
+        let widthPt = 100.0 * mmToPoints
+        let heightPt = 150.0 * mmToPoints
+
+        let renderer = ImageRenderer(content:
+            labelView
+                .frame(width: widthPt, height: heightPt)
+                .background(.white)
+        )
+        renderer.scale = 3.0
+
+        guard let image = renderer.uiImage else { return }
+
+        let printInfo = UIPrintInfo(dictionary: nil)
+        printInfo.jobName = "Box Label"
+        printInfo.outputType = .grayscale
+
+        let controller = UIPrintInteractionController.shared
+        controller.printInfo = printInfo
+        controller.printingItem = image
+        controller.present(animated: true)
+    }
+
     private func fixedBoxInfo(_ dims: Box.BoxType.Dimensions) -> some View {
         VStack(spacing: 20) {
             Image(systemName: viewModel.box.boxType.iconName)
@@ -219,5 +256,47 @@ struct BoxItemRow: View {
                 .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 2)
+    }
+}
+
+// MARK: - Box Label (100mm x 150mm thermal print layout)
+
+private struct BoxLabelView: View {
+    let customerName: String
+    let boxType: String
+    let boxNumber: Int
+    let shippingMethod: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Image("CabinetLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 40)
+                Spacer()
+            }
+            .padding(.bottom, 16)
+
+            Spacer()
+
+            VStack(spacing: 12) {
+                Text(customerName)
+                    .font(.system(size: 28, weight: .bold))
+                    .multilineTextAlignment(.center)
+
+                Text("\(boxType) #\(boxNumber)")
+                    .font(.system(size: 22, weight: .bold))
+                    .multilineTextAlignment(.center)
+            }
+
+            Spacer()
+
+            Text(shippingMethod)
+                .font(.system(size: 20, weight: .bold))
+                .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .padding(20)
+        .foregroundStyle(.black)
     }
 }
