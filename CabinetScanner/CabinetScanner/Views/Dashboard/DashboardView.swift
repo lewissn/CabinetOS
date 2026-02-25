@@ -5,24 +5,32 @@ import Foundation
 // MARK: - Models
 // ============================================================
 
-struct DashboardSummary {
+struct DispatchIntelligence {
     let dueToday: Int
     let dueTomorrow: Int
-    let upcoming: [UpcomingJob]
+    let courierGroups: [CourierGroup]
+    let inHouseJobs: [DispatchJob]
 
-    static let empty = DashboardSummary(dueToday: 0, dueTomorrow: 0, upcoming: [])
+    static let empty = DispatchIntelligence(
+        dueToday: 0, dueTomorrow: 0, courierGroups: [], inHouseJobs: []
+    )
 }
 
-struct UpcomingJob: Identifiable {
+struct CourierGroup: Identifiable {
+    var id: String { shippingMethod }
+    let shippingMethod: String
+    let dueToday: Int
+    let dueTomorrow: Int
+
+    var hasJobs: Bool { dueToday > 0 || dueTomorrow > 0 }
+}
+
+struct DispatchJob: Identifiable {
     let id: String
     let customer: String
     let salesOrder: String
-    let shippingMethod: String?
+    let postcode: String?
     let dueDate: Date
-
-    var isDueToday: Bool {
-        Calendar.london.isDateInToday(dueDate)
-    }
 }
 
 extension Calendar {
@@ -39,51 +47,83 @@ extension Calendar {
 
 final class DashboardService {
 
-    func fetchSummary() async throws -> DashboardSummary {
+    private static let inHouseKeywords = ["in-house", "in house", "inhouse"]
+
+    static func isInHouse(_ method: String?) -> Bool {
+        guard let method = method?.lowercased() else { return false }
+        return inHouseKeywords.contains { method.contains($0) }
+    }
+
+    func fetchIntelligence() async throws -> DispatchIntelligence {
         let cal = Calendar.london
         let todayStart = cal.startOfDay(for: Date())
 
         guard let tomorrowStart = cal.date(byAdding: .day, value: 1, to: todayStart),
-              let tomorrowEnd = cal.date(byAdding: .day, value: 2, to: todayStart),
-              let windowEnd = cal.date(byAdding: .day, value: 3, to: todayStart)
-        else {
-            return .empty
-        }
+              let tomorrowEnd   = cal.date(byAdding: .day, value: 2, to: todayStart)
+        else { return .empty }
 
-        let rows = try await fetchJobs(from: todayStart, before: windowEnd)
+        let rows = try await fetchJobs(from: todayStart, before: tomorrowEnd)
 
         var dueToday = 0
         var dueTomorrow = 0
-        var upcoming: [UpcomingJob] = []
+        var methodTodayCounts: [String: Int] = [:]
+        var methodTomorrowCounts: [String: Int] = [:]
+        var inHouseJobs: [DispatchJob] = []
 
         for row in rows {
             guard let dueDate = row.parsedDueDate else { continue }
             let dayStart = cal.startOfDay(for: dueDate)
 
-            if dayStart < todayStart { continue }
-            if dayStart >= todayStart && dayStart < tomorrowStart { dueToday += 1 }
-            if dayStart >= tomorrowStart && dayStart < tomorrowEnd { dueTomorrow += 1 }
+            let isToday    = dayStart >= todayStart && dayStart < tomorrowStart
+            let isTomorrow = dayStart >= tomorrowStart && dayStart < tomorrowEnd
 
-            upcoming.append(UpcomingJob(
-                id: row.stableId,
-                customer: row.customer ?? "Unknown",
-                salesOrder: row.salesOrderString ?? "—",
-                shippingMethod: row.shippingMethod,
-                dueDate: dueDate
-            ))
+            if isToday    { dueToday += 1 }
+            if isTomorrow { dueTomorrow += 1 }
+
+            let method = row.shippingMethod ?? "Other"
+
+            if isToday    { methodTodayCounts[method, default: 0] += 1 }
+            if isTomorrow { methodTomorrowCounts[method, default: 0] += 1 }
+
+            if Self.isInHouse(row.shippingMethod) && (isToday || isTomorrow) {
+                inHouseJobs.append(DispatchJob(
+                    id: row.stableId,
+                    customer: row.customer ?? "Unknown",
+                    salesOrder: row.salesOrderString ?? "—",
+                    postcode: row.postcode,
+                    dueDate: dueDate
+                ))
+            }
         }
 
-        upcoming.sort {
-            if $0.dueDate != $1.dueDate { return $0.dueDate < $1.dueDate }
-            return $0.customer.localizedCaseInsensitiveCompare($1.customer) == .orderedAscending
+        let allMethods = Set(methodTodayCounts.keys).union(methodTomorrowCounts.keys)
+        let courierGroups = allMethods
+            .map { method in
+                CourierGroup(
+                    shippingMethod: method,
+                    dueToday: methodTodayCounts[method] ?? 0,
+                    dueTomorrow: methodTomorrowCounts[method] ?? 0
+                )
+            }
+            .filter { $0.hasJobs }
+            .sorted {
+                $0.shippingMethod.localizedCaseInsensitiveCompare($1.shippingMethod) == .orderedAscending
+            }
+
+        inHouseJobs.sort { a, b in
+            switch (a.postcode?.nilIfEmpty, b.postcode?.nilIfEmpty) {
+            case (nil, nil):   return a.customer < b.customer
+            case (nil, _):     return false
+            case (_, nil):     return true
+            case let (pa?, pb?): return pa.localizedCaseInsensitiveCompare(pb) == .orderedAscending
+            }
         }
 
-        if upcoming.count > 30 { upcoming = Array(upcoming.prefix(30)) }
-
-        return DashboardSummary(
+        return DispatchIntelligence(
             dueToday: dueToday,
             dueTomorrow: dueTomorrow,
-            upcoming: upcoming
+            courierGroups: courierGroups,
+            inHouseJobs: inHouseJobs
         )
     }
 
@@ -91,13 +131,14 @@ final class DashboardService {
 
     private func fetchJobs(from startDate: Date, before endDate: Date) async throws -> [JobRow] {
         let startString = Self.isoDateFormatter.string(from: startDate)
-        let endString = Self.isoDateFormatter.string(from: endDate)
+        let endString   = Self.isoDateFormatter.string(from: endDate)
 
         var components = URLComponents(string: Configuration.supabaseURL + "/rest/v1/jobs")!
         components.queryItems = [
-            URLQueryItem(name: "select", value: "id,due_raw,customer,sales_order,shipping_method"),
+            URLQueryItem(name: "select", value: "id,due_raw,customer,sales_order,shipping_method,postcode"),
             URLQueryItem(name: "due_raw", value: "gte.\(startString)"),
             URLQueryItem(name: "due_raw", value: "lt.\(endString)"),
+            URLQueryItem(name: "workflow_group", value: "in.(Post-Production,Production)"),
             URLQueryItem(name: "order", value: "due_raw.asc,customer.asc"),
         ]
 
@@ -134,19 +175,23 @@ final class DashboardService {
     }()
 }
 
+// MARK: - Decodable row
+
 private struct JobRow: Decodable {
     let id: FlexibleID?
     let dueRaw: String?
     let customer: String?
     let salesOrder: FlexibleString?
     let shippingMethod: String?
+    let postcode: String?
 
     enum CodingKeys: String, CodingKey {
         case id
-        case dueRaw = "due_raw"
+        case dueRaw        = "due_raw"
         case customer
-        case salesOrder = "sales_order"
+        case salesOrder     = "sales_order"
         case shippingMethod = "shipping_method"
+        case postcode
     }
 
     var parsedDueDate: Date? {
@@ -184,14 +229,14 @@ private enum FlexibleID: Decodable {
 
     var stringValue: String {
         switch self {
-        case .int(let v): return String(v)
+        case .int(let v):    return String(v)
         case .string(let v): return v
         }
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
-        if let v = try? container.decode(Int.self) { self = .int(v); return }
+        if let v = try? container.decode(Int.self)    { self = .int(v); return }
         if let v = try? container.decode(String.self) { self = .string(v); return }
         throw DecodingError.typeMismatch(
             FlexibleID.self,
@@ -231,10 +276,14 @@ enum DashboardError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .badURL: return "Invalid Supabase URL configuration."
+        case .badURL:             return "Invalid Supabase URL configuration."
         case .httpError(let code): return "Server returned HTTP \(code)."
         }
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 // ============================================================
@@ -251,7 +300,7 @@ final class DashboardViewModel: ObservableObject {
     }
 
     @Published private(set) var state: State = .loading
-    @Published private(set) var summary: DashboardSummary = .empty
+    @Published private(set) var intelligence: DispatchIntelligence = .empty
 
     private let service = DashboardService()
 
@@ -274,7 +323,7 @@ final class DashboardViewModel: ObservableObject {
     func refresh() async {
         if case .loading = state {} else { state = .loading }
         do {
-            summary = try await service.fetchSummary()
+            intelligence = try await service.fetchIntelligence()
             state = .loaded
         } catch {
             state = .error(error.localizedDescription)
@@ -288,6 +337,7 @@ final class DashboardViewModel: ObservableObject {
 
 struct DashboardView: View {
     @StateObject private var vm = DashboardViewModel()
+    var switchToPackaging: () -> Void = {}
 
     var body: some View {
         NavigationStack {
@@ -295,7 +345,9 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     header
                     statsRow
-                    upcomingSection
+                    courierSummarySection
+                    inHouseLoadingSection
+                    packagingShortcut
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 32)
@@ -325,6 +377,7 @@ struct DashboardView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 36, height: 36)
+                .offset(y: -2)
         }
         .padding(.top, 16)
     }
@@ -337,32 +390,38 @@ struct DashboardView: View {
                 skeletonCard
                 skeletonCard
             } else {
-                StatCard(title: "Due Today", value: vm.summary.dueToday, subtitle: "Jobs", accentColor: .blue)
-                StatCard(title: "Due Tomorrow", value: vm.summary.dueTomorrow, subtitle: "Jobs", accentColor: .orange)
+                StatCard(title: "Due Today",
+                         value: vm.intelligence.dueToday,
+                         subtitle: "Jobs",
+                         accentColor: .blue)
+                StatCard(title: "Due Tomorrow",
+                         value: vm.intelligence.dueTomorrow,
+                         subtitle: "Jobs",
+                         accentColor: .orange)
             }
         }
     }
 
-    // MARK: Upcoming list
+    // MARK: Courier summary
 
-    private var upcomingSection: some View {
+    private var courierSummarySection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Upcoming Dispatches")
+            Label("Dispatch Intelligence", systemImage: "shippingbox")
                 .font(.title3)
                 .fontWeight(.semibold)
 
             if vm.state == .loading {
-                ForEach(0..<4, id: \.self) { _ in skeletonRow }
+                ForEach(0..<3, id: \.self) { _ in skeletonRow }
             } else if case .error(let msg) = vm.state {
                 errorCard(msg)
-            } else if vm.summary.upcoming.isEmpty {
+            } else if vm.intelligence.courierGroups.isEmpty {
                 emptyState
             } else {
                 VStack(spacing: 0) {
-                    ForEach(vm.summary.upcoming) { job in
-                        UpcomingJobRow(job: job)
-                        if job.id != vm.summary.upcoming.last?.id {
-                            Divider()
+                    ForEach(vm.intelligence.courierGroups) { group in
+                        CourierGroupRow(group: group)
+                        if group.id != vm.intelligence.courierGroups.last?.id {
+                            Divider().padding(.leading, 4)
                         }
                     }
                 }
@@ -373,6 +432,57 @@ struct DashboardView: View {
         }
     }
 
+    // MARK: In-house loading order
+
+    @ViewBuilder
+    private var inHouseLoadingSection: some View {
+        if vm.state == .loaded && !vm.intelligence.inHouseJobs.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("In-House Loading Order", systemImage: "truck.box")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+
+                Text("Load last drop first.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                VStack(spacing: 0) {
+                    ForEach(Array(vm.intelligence.inHouseJobs.enumerated()),
+                            id: \.element.id) { index, job in
+                        InHouseJobRow(job: job, position: index + 1)
+                        if index < vm.intelligence.inHouseJobs.count - 1 {
+                            Divider().padding(.leading, 40)
+                        }
+                    }
+                }
+                .padding(16)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
+            }
+        }
+    }
+
+    // MARK: Packaging shortcut
+
+    private var packagingShortcut: some View {
+        Button(action: switchToPackaging) {
+            HStack {
+                Image(systemName: "shippingbox.fill")
+                    .foregroundStyle(.blue)
+                Text("Open Packaging")
+                    .fontWeight(.medium)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(16)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: States
 
     private var emptyState: some View {
@@ -380,7 +490,7 @@ struct DashboardView: View {
             Image(systemName: "checkmark.circle")
                 .font(.system(size: 36))
                 .foregroundStyle(.green)
-            Text("Nothing due in the next 3 days.")
+            Text("No dispatches due.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -431,7 +541,7 @@ struct DashboardView: View {
 }
 
 // ============================================================
-// MARK: - Stat Card component
+// MARK: - Stat Card
 // ============================================================
 
 private struct StatCard: View {
@@ -463,69 +573,80 @@ private struct StatCard: View {
 }
 
 // ============================================================
-// MARK: - Upcoming Job Row component
+// MARK: - Courier Group Row
 // ============================================================
 
-private struct UpcomingJobRow: View {
-    let job: UpcomingJob
+private struct CourierGroupRow: View {
+    let group: CourierGroup
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(group.shippingMethod)
+                .font(.body)
+                .fontWeight(.semibold)
+
+            if group.dueToday > 0 {
+                HStack(spacing: 6) {
+                    Circle().fill(.blue).frame(width: 6, height: 6)
+                    Text("Jobs due today: \(group.dueToday)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if group.dueTomorrow > 0 {
+                HStack(spacing: 6) {
+                    Circle().fill(.orange).frame(width: 6, height: 6)
+                    Text("Jobs due tomorrow: \(group.dueTomorrow)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 8)
+    }
+}
+
+// ============================================================
+// MARK: - In-House Job Row
+// ============================================================
+
+private struct InHouseJobRow: View {
+    let job: DispatchJob
+    let position: Int
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
+            Text("\(position)")
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundStyle(.white)
+                .frame(width: 24, height: 24)
+                .background(Color.blue, in: Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
                 Text(job.customer)
                     .font(.body)
                     .fontWeight(.medium)
                     .lineLimit(1)
 
-                secondaryLine
-                    .font(.subheadline)
+                Text("SO \(job.salesOrder)")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
             }
 
             Spacer(minLength: 4)
 
-            if job.isDueToday {
-                badge("Today", color: .blue)
-            } else {
-                Text(formattedDueDate)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+            if let postcode = job.postcode, !postcode.isEmpty {
+                Text(postcode)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.blue.opacity(0.1), in: Capsule())
+                    .foregroundStyle(.blue)
             }
         }
         .padding(.vertical, 6)
-    }
-
-    @ViewBuilder
-    private var secondaryLine: some View {
-        let parts = [
-            "SO \(job.salesOrder)",
-            job.shippingMethod
-        ].compactMap { $0 }
-
-        Text(parts.joined(separator: " \u{2022} "))
-    }
-
-    private var formattedDueDate: String {
-        let cal = Calendar.london
-        let f = DateFormatter()
-        f.timeZone = TimeZone(identifier: "Europe/London")
-
-        if cal.isDate(job.dueDate, equalTo: Date(), toGranularity: .weekOfYear) {
-            f.dateFormat = "EEE"
-        } else {
-            f.dateFormat = "d MMM"
-        }
-        return f.string(from: job.dueDate)
-    }
-
-    private func badge(_ text: String, color: Color) -> some View {
-        Text(text)
-            .font(.caption2)
-            .fontWeight(.semibold)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.12), in: Capsule())
-            .foregroundStyle(color)
     }
 }

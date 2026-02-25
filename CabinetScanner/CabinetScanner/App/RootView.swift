@@ -8,27 +8,46 @@ struct RootView: View {
     }
 }
 
+// MARK: - Tab enumeration
+
+enum AppTab: Int {
+    case dashboard
+    case packaging
+    case stock
+    case settings
+}
+
 // MARK: - Tab bar
 
 struct MainTabView: View {
     @EnvironmentObject var appState: AppState
+    @State private var selectedTab: AppTab = .dashboard
 
     var body: some View {
-        TabView {
-            DashboardView()
+        TabView(selection: $selectedTab) {
+            DashboardView(switchToPackaging: { selectedTab = .packaging })
                 .tabItem {
                     Label("Dashboard", systemImage: "square.grid.2x2")
                 }
+                .tag(AppTab.dashboard)
 
             packagingTab
                 .tabItem {
                     Label("Packaging", systemImage: "shippingbox")
                 }
+                .tag(AppTab.packaging)
+
+            StockView()
+                .tabItem {
+                    Label("Stock", systemImage: "archivebox")
+                }
+                .tag(AppTab.stock)
 
             SettingsPlaceholderView()
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
                 }
+                .tag(AppTab.settings)
         }
     }
 
