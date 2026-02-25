@@ -133,16 +133,14 @@ final class DashboardService {
         let startString = Self.isoDateFormatter.string(from: startDate)
         let endString   = Self.isoDateFormatter.string(from: endDate)
 
-        var components = URLComponents(string: Configuration.supabaseURL + "/rest/v1/jobs")!
-        components.queryItems = [
-            URLQueryItem(name: "select", value: "id,due_raw,customer,sales_order,shipping_method,postcode"),
-            URLQueryItem(name: "due_raw", value: "gte.\(startString)"),
-            URLQueryItem(name: "due_raw", value: "lt.\(endString)"),
-            URLQueryItem(name: "workflow_group", value: "in.(Post-Production,Production)"),
-            URLQueryItem(name: "order", value: "due_raw.asc,customer.asc"),
-        ]
+        let urlString = Configuration.supabaseURL + "/rest/v1/jobs"
+            + "?select=id,due_raw,customer,sales_order,shipping_method"
+            + "&due_raw=gte.\(startString)"
+            + "&due_raw=lt.\(endString)"
+            + "&workflow_group=in.(Post-Production,Production)"
+            + "&order=due_raw.asc,customer.asc"
 
-        guard let url = components.url else { throw DashboardError.badURL }
+        guard let url = URL(string: urlString) else { throw DashboardError.badURL }
 
         var request = URLRequest(url: url)
         request.setValue(Configuration.supabaseAnonKey, forHTTPHeaderField: "apikey")
