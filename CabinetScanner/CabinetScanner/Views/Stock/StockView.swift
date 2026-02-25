@@ -830,7 +830,7 @@ private struct PurchaseItemSheet: View {
 // MARK: - Shared error view
 // ============================================================
 
-private func errorView(_ message: String, retry: @escaping () -> Void) -> some View {
+fileprivate func errorView(_ message: String, retry: @escaping () -> Void) -> some View {
     VStack(spacing: 12) {
         Spacer()
         Image(systemName: "exclamationmark.triangle")
