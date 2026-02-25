@@ -199,14 +199,13 @@ struct BoxDetailView: View {
 
         guard let image = renderer.uiImage else { return }
 
-        let printInfo = UIPrintInfo(dictionary: nil)
-        printInfo.jobName = "Box Label"
-        printInfo.outputType = .grayscale
+        guard let windowScene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene }).first,
+              let rootVC = windowScene.windows.first?.rootViewController else { return }
 
-        let controller = UIPrintInteractionController.shared
-        controller.printInfo = printInfo
-        controller.printingItem = image
-        controller.present(animated: true)
+        let activityVC = UIActivityViewController(activityItems: [image], applicationActivities: nil)
+        activityVC.popoverPresentationController?.sourceView = rootVC.view
+        rootVC.present(activityVC, animated: true)
     }
 
     private func fixedBoxInfo(_ dims: Box.BoxType.Dimensions) -> some View {
