@@ -13,14 +13,16 @@ final class BoxListViewModel: ObservableObject {
 
     let consignment: Consignment
     let manifestId: String
+    let manifestName: String
     private let api: APIServiceProtocol
 
     var openBoxes: [Box] { boxes.filter { $0.isOpen } }
     var closedBoxes: [Box] { boxes.filter { $0.isClosed } }
 
-    init(consignment: Consignment, manifestId: String, api: APIServiceProtocol = ServiceContainer.shared.api) {
+    init(consignment: Consignment, manifestId: String, manifestName: String, api: APIServiceProtocol = ServiceContainer.shared.api) {
         self.consignment = consignment
         self.manifestId = manifestId
+        self.manifestName = manifestName
         self.api = api
     }
 

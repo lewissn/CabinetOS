@@ -39,7 +39,8 @@ struct ConsignmentListView: View {
             BoxListView(
                 viewModel: BoxListViewModel(
                     consignment: consignment,
-                    manifestId: viewModel.manifestId
+                    manifestId: viewModel.manifestId,
+                    manifestName: viewModel.manifestName
                 )
             )
         }

@@ -10,13 +10,23 @@ final class BoxDetailViewModel: ObservableObject {
 
     let manifestId: String
     let consignmentId: String
+    let customerName: String
+    let manifestName: String
     private let api: APIServiceProtocol
     private let realtime = RealtimeService()
 
-    init(box: Box, manifestId: String, consignmentId: String, api: APIServiceProtocol = ServiceContainer.shared.api) {
+    var shippingMethod: String {
+        let name = manifestName
+        guard let firstDigit = name.firstIndex(where: { $0.isNumber }) else { return name }
+        return String(name[name.startIndex..<firstDigit]).trimmingCharacters(in: .whitespaces)
+    }
+
+    init(box: Box, manifestId: String, consignmentId: String, customerName: String, manifestName: String, api: APIServiceProtocol = ServiceContainer.shared.api) {
         self.box = box
         self.manifestId = manifestId
         self.consignmentId = consignmentId
+        self.customerName = customerName
+        self.manifestName = manifestName
         self.api = api
     }
 
