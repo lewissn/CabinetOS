@@ -42,11 +42,21 @@ struct JobDetailView: View {
 
             } else if let detail = viewModel.detail {
                 detailList(detail)
+
+            } else {
+                // Nothing loaded, nothing failed, nothing in flight. Reachable
+                // when the screen is rebuilt for a different job, and an empty
+                // white screen is the worst possible answer — so it shows the
+                // same thing as a first load and gets on with it.
+                ProgressView("Loading job…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .navigationTitle(knownTitle ?? "Job")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await viewModel.load() }
+        // Keyed on the job, so a screen reused for a different one reloads
+        // rather than keeping the first job's contents.
+        .task(id: jobId) { await viewModel.load(jobId: jobId) }
         .sheet(isPresented: $showingProof) {
             if let proof = viewModel.detail?.proof, !proof.isEmpty {
                 ProofViewerView(
@@ -70,27 +80,82 @@ struct JobDetailView: View {
     // MARK: - Body
 
     private func detailList(_ detail: JobDetail) -> some View {
+        // Ordered for the people who actually open this screen: packaging and
+        // post-production, standing at a bench with a job in front of them.
+        // They are here to move the step on, look at the proof, and read the
+        // order details — so those come first, and everything that answers
+        // "whose job is this and where did it come from" comes after.
         List {
-            provenanceSection(detail.provenance)
+            currentStepSection(detail)
+            proofSection(detail.proof)
 
-            if !detail.customer.isEmpty { customerSection(detail.customer) }
-            if !detail.references.isEmpty { referencesSection(detail.references) }
             if !detail.dates.isEmpty { datesSection(detail.dates) }
-            if !detail.production.isEmpty { productionSection(detail.production) }
+
             if let instructions = detail.instructions, !instructions.isEmpty {
                 instructionsSection(instructions)
             }
             if let items = detail.lineItems, !items.isEmpty { lineItemsSection(items) }
-            proofSection(detail.proof)
-            if !detail.steps.isEmpty { stepsSection(detail.steps, capabilities: detail.workflowCapabilities) }
+
+            if !detail.steps.isEmpty {
+                stepsSection(detail.steps, capabilities: detail.workflowCapabilities)
+            }
+
+            if !detail.customer.isEmpty { customerSection(detail.customer) }
+            if !detail.references.isEmpty { referencesSection(detail.references) }
+            if !detail.production.isEmpty { productionSection(detail.production) }
             if !detail.logistics.isEmpty { logisticsSection(detail.logistics) }
             if let team = detail.team, !team.isEmpty { teamSection(team) }
             if !detail.aliases.isEmpty { aliasesSection(detail.aliases) }
 
+            provenanceSection(detail.provenance)
             shopvoxSection(detail)
         }
         .listStyle(.insetGrouped)
         .refreshable { await viewModel.load() }
+    }
+
+    // MARK: Current step
+    //
+    // The one thing this screen is most often opened to do.
+    //
+    // Before this, moving a step meant scrolling past six sections to a list
+    // of thirteen, finding the right row among them, and hitting a small chip.
+    // People did not find it. So the step the job is ACTUALLY on is lifted to
+    // the top with one full-width action on it, and the full workflow stays
+    // further down for the times somebody needs a different row.
+
+    @ViewBuilder
+    private func currentStepSection(_ detail: JobDetail) -> some View {
+        if let step = currentStep(detail) {
+            Section {
+                CurrentStepCard(
+                    step: step,
+                    stageName: detail.production.currentStage ?? step.group,
+                    hasLaterSteps: detail.steps.contains { !$0.isComplete },
+                    isMoving: viewModel.isMoving(step),
+                    isAnyMoving: viewModel.isAnyStepMoving,
+                    perform: { action in
+                        Task { await viewModel.perform(action, on: step) }
+                    }
+                )
+            } header: {
+                Text("Now")
+            }
+        }
+    }
+
+    /// The step ShopVOX says the job is on, matched to the row we hold for it.
+    ///
+    /// Matched by name because that is the only thing `currentStepName` gives
+    /// us. When it matches nothing — an unmapped step, or a job whose steps
+    /// have not been read in full — the card is simply not shown, and the
+    /// workflow list below is still there.
+    private func currentStep(_ detail: JobDetail) -> JobStep? {
+        if let name = detail.production.currentStep,
+           let match = detail.steps.first(where: { $0.name == name }) {
+            return match
+        }
+        return nil
     }
 
     // MARK: - Sections
@@ -262,13 +327,29 @@ struct JobDetailView: View {
                 Button {
                     showingProof = true
                 } label: {
-                    HStack {
-                        Label(proof.displayLabel, systemImage: "doc.richtext")
+                    HStack(spacing: 12) {
+                        Image(systemName: "doc.richtext.fill")
+                            .font(.system(size: 22))
+                            .foregroundStyle(.white)
+                            .frame(width: 40, height: 40)
+                            .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 10))
+
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("View proof")
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+                            Text(proof.displayLabel)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
                         Spacer()
+
                         Image(systemName: "chevron.right")
-                            .font(.caption)
+                            .font(.footnote.weight(.semibold))
                             .foregroundStyle(.tertiary)
                     }
+                    .padding(.vertical, 4)
                 }
             } else {
                 // Roughly one job in twenty has no proof. Saying so plainly
@@ -280,8 +361,6 @@ struct JobDetailView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
-        } header: {
-            Text("Artwork")
         } footer: {
             // ShopVOX gives no approval state, so this says exactly what it is.
             Text("The proof currently on the job in ShopVOX. Its approval state is not published by the API, so this is not necessarily the approved artwork.")
@@ -304,10 +383,10 @@ struct JobDetailView: View {
                 )
             }
         } header: {
-            Text("Production steps")
+            Text("Whole workflow")
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Read from ShopVOX. Starting or completing a step here changes it in ShopVOX — the app shows the result only once ShopVOX confirms it.")
+                Text("Every step on this job. Starting or completing one changes it in ShopVOX — the app shows the result only once ShopVOX confirms it.")
 
                 // Said once, because it is true of the whole job rather than of
                 // any one step.
@@ -616,5 +695,163 @@ enum JobTextFormatting {
         )
 
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+// MARK: - Current step card
+//
+// What the job is on now, and the one thing most people came here to do.
+//
+// The design problem this solves: the workflow list shows thirteen steps, each
+// with two small chips, and nothing on the screen said which row mattered.
+// People could not find how to update a step at all. Here there is one step,
+// named, with one full-width button on it.
+//
+// Which action is primary depends on where the step is. A step not yet started
+// leads with Start; a step running leads with Complete, because by the time
+// somebody is looking at a running step on a bench, finishing it is what they
+// are about to do. The other action stays available, smaller.
+//
+// Complete asks first. Start and Pause do not. ShopVOX has no way to reopen a
+// completed step through the API, so that is the one press here that a person
+// cannot undo from the app — and it is now a large button at the top of the
+// screen, which is exactly where a mis-tap happens.
+
+private struct CurrentStepCard: View {
+    let step: JobStep
+    let stageName: String?
+    /// Whether anything is left after this one. "The next step is below" is
+    /// not true of a finished job, and saying it sends somebody scrolling for
+    /// a step that does not exist.
+    let hasLaterSteps: Bool
+    let isMoving: Bool
+    let isAnyMoving: Bool
+    let perform: (StepActionKind) -> Void
+
+    @State private var confirmingComplete = false
+
+    /// The action this step is most likely to need next.
+    private var primary: StepActionKind? {
+        if allows(.complete), step.isActive { return .complete }
+        if allows(.start) { return .start }
+        if allows(.complete) { return .complete }
+        return nil
+    }
+
+    private var secondary: [StepActionKind] {
+        StepActionKind.allCases.filter { $0 != primary && allows($0) }
+    }
+
+    private func allows(_ action: StepActionKind) -> Bool {
+        step.isActionable && (step.action(action)?.allowed ?? false)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            header
+
+            if let primary {
+                Button {
+                    if primary == .complete {
+                        confirmingComplete = true
+                    } else {
+                        perform(primary)
+                    }
+                } label: {
+                    HStack {
+                        Spacer()
+                        if isMoving {
+                            ProgressView().tint(.white)
+                        } else {
+                            Label(
+                                "\(primary.title) \(step.name)",
+                                systemImage: primary.systemImage
+                            )
+                            .font(.headline)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(primary == .complete ? .green : .accentColor)
+                .disabled(isAnyMoving)
+
+                if !secondary.isEmpty {
+                    HStack(spacing: 10) {
+                        ForEach(secondary, id: \.self) { action in
+                            Button {
+                                if action == .complete {
+                                    confirmingComplete = true
+                                } else {
+                                    perform(action)
+                                }
+                            } label: {
+                                Label(action.title, systemImage: action.systemImage)
+                                    .font(.subheadline)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.regular)
+                            .disabled(isAnyMoving)
+                        }
+                    }
+                }
+            } else if let reason = blockedReason {
+                // Nothing to press, and why. A card with no button and no
+                // explanation is the fault this screen started with.
+                Label(reason, systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 6)
+        .confirmationDialog(
+            "Complete \(step.name)?",
+            isPresented: $confirmingComplete,
+            titleVisibility: .visible
+        ) {
+            Button("Complete \(step.name)") { perform(.complete) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This marks the step done in ShopVOX. It cannot be undone from the app — a step reopened has to be done in ShopVOX itself.")
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(step.name)
+                    .font(.title3.weight(.semibold))
+
+                if let stageName {
+                    Text(stageName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let who = step.assignedToName {
+                    Text(who)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer()
+
+            StepStateChip(step: step)
+        }
+    }
+
+    private var blockedReason: String? {
+        if step.isComplete {
+            return hasLaterSteps
+                ? "This step is done. The next one is in the workflow below."
+                : "Every step on this job is done."
+        }
+        return step.action(.start)?.reason
+            ?? "This step cannot be moved from the app."
     }
 }

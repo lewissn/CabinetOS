@@ -116,6 +116,11 @@ final class AppRouter: ObservableObject {
         selectedTab = Configuration.hasDeviceAPIToken ? .jobs : .settings
     }
 
+    /// Take the pending job, clearing it.
+    ///
+    /// Cleared on read so the same job can be scanned again a minute later:
+    /// if the value stayed set, a repeat scan would be no change at all and
+    /// nothing would happen.
     func consumeJob() -> String? {
         defer { pendingJobId = nil }
         return pendingJobId

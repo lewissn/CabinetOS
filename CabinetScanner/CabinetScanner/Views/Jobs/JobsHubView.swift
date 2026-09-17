@@ -18,13 +18,20 @@ struct JobsHubView: View {
     @StateObject private var board = ProductionViewsViewModel()
     @EnvironmentObject private var router: AppRouter
 
-    /// The job a link or a notification asked for, pushed onto this stack.
-    @State private var linkedJobId: String?
+    /// The navigation stack, held explicitly.
+    ///
+    /// `navigationDestination(item:)` pushes on nil→value and pops on
+    /// value→nil, but does NOT swap when the value changes from one job to
+    /// another — which is exactly what happens when somebody scans one label
+    /// and then the next, and it left the first job on screen. An explicit
+    /// path describes the whole stack, so replacing it is one state change
+    /// that SwiftUI applies as written.
+    @State private var path = NavigationPath()
 
     private var isSearching: Bool { !search.trimmedQuery.isEmpty }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if isSearching {
                     JobSearchResults(viewModel: search)
@@ -33,17 +40,20 @@ struct JobsHubView: View {
                 }
             }
             .navigationTitle(isSearching ? "Search" : "Jobs")
+            // No `.id()` here. Forcing a new identity does make SwiftUI
+            // rebuild the screen, but it tears the old one down mid-transition
+            // and the replacement came up blank. JobDetailView follows its
+            // `jobId` instead — see its `.task(id:)` — so a reused screen
+            // reloads for the new job on its own.
             .navigationDestination(for: JobSearchResult.self) { result in
                 JobDetailView(jobId: result.id, knownTitle: result.displayTitle)
             }
             .navigationDestination(for: ProductionJob.self) { job in
                 JobDetailView(jobId: job.id, knownTitle: job.displayTitle)
             }
-            // A deep link or a tapped notification. Kept as its own
-            // destination rather than pushed as a value, because the only
-            // thing known about it is the id.
-            .navigationDestination(item: $linkedJobId) { id in
-                JobDetailView(jobId: id)
+            // A deep link or a tapped notification. Only an id is known.
+            .navigationDestination(for: LinkedJob.self) { linked in
+                JobDetailView(jobId: linked.id)
             }
             .searchable(
                 text: $search.query,
@@ -53,17 +63,41 @@ struct JobsHubView: View {
             .autocorrectionDisabled()
             .textInputAutocapitalization(.never)
             .task { await board.load() }
-            // Taken on appearing AND on change: a link can arrive while this
-            // tab is already showing, or before it has ever been opened.
-            .task(id: router.pendingJobId) { takePendingJob() }
+        }
+        // Attached to the STACK, not to its root content.
+        //
+        // On the root it never fired for a second scan: `.task` and
+        // `.onChange` are tied to a view being in the hierarchy, and pushing
+        // a detail screen takes the root out of it. So the first label opened
+        // its job and every one after that did nothing, which is precisely
+        // the scanning case this exists for.
+        //
+        // `initial: true` covers a link that arrived before this tab had ever
+        // been opened.
+        .onChange(of: router.pendingJobId, initial: true) { _, _ in
+            openPendingJob()
         }
     }
 
-    private func takePendingJob() {
-        guard router.pendingJobId != nil else { return }
+    private func openPendingJob() {
+        guard let id = router.consumeJob() else { return }
+
         // Searching and a pushed detail screen fight each other; clear the
-        // field so the link lands on the job rather than under a result list.
+        // field so the job is not opened on top of a result list.
         search.clear()
-        linkedJobId = router.consumeJob()
+
+        // Replace the stack rather than appending. Scanning a second label
+        // should land on that job, not bury it under the first — and backing
+        // out should return to the board, not walk back through every label
+        // handled this shift.
+        path = NavigationPath()
+        path.append(LinkedJob(id: id))
     }
+}
+
+/// A job reached by id alone — a scanned label, or a tapped notification.
+/// Distinct from `JobSearchResult` and `ProductionJob` so the stack can tell
+/// the three apart.
+private struct LinkedJob: Hashable {
+    let id: String
 }

@@ -129,7 +129,10 @@ final class JobDetailViewModel: ObservableObject {
     /// step it refers to is the wrong way round.
     @Published var actionResult: StepActionOutcome?
 
-    private let jobId: String
+    /// The job currently loaded. Set by `load(jobId:)` rather than at init,
+    /// so one view model can follow a screen that is reused for another job —
+    /// which is what SwiftUI does when one pushed detail replaces another.
+    private(set) var jobId: String
     private let service: JobIndexService
 
     /// One id per tap, held so a retry of the SAME tap reuses it and the
@@ -141,7 +144,20 @@ final class JobDetailViewModel: ObservableObject {
         self.service = service
     }
 
-    func load() async {
+    /// Load a job, switching to it if it is not the one already held.
+    ///
+    /// Switching clears the previous job's detail first. Showing one job's
+    /// steps under another job's title for the length of a network round trip
+    /// is worse than showing a spinner — somebody would act on it.
+    func load(jobId newJobId: String? = nil) async {
+        if let newJobId, newJobId != jobId {
+            jobId = newJobId
+            detail = nil
+            actionResult = nil
+            stepInFlight = nil
+            requestIds.removeAll()
+        }
+
         isLoading = true
         errorMessage = nil
 
