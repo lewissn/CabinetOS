@@ -37,11 +37,9 @@ struct ConsignmentListView: View {
         .navigationTitle(viewModel.manifestName)
         .navigationDestination(for: Consignment.self) { consignment in
             BoxListView(
-                viewModel: BoxListViewModel(
-                    consignment: consignment,
-                    manifestId: viewModel.manifestId,
-                    manifestName: viewModel.manifestName
-                )
+                consignment: consignment,
+                manifestId: viewModel.manifestId,
+                manifestName: viewModel.manifestName
             )
         }
         .task {

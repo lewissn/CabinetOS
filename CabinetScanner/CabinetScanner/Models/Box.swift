@@ -9,17 +9,23 @@ struct Box: Identifiable, Codable, Hashable {
     let itemCount: Int
     let createdAt: Date
     let closedAt: Date?
+    let wrappedAt: Date?
+    let wrappedBy: String?
+    let wrappedByDevice: String?
+    let wrapReworkCount: Int
 
     enum BoxType: String, Codable, CaseIterable {
         case panel = "panel"
         case fittingKit = "fitting_kit"
         case drawerRunner = "drawer_runner"
+        case hangingRail = "hanging_rail"
 
         var displayName: String {
             switch self {
             case .panel: return "Panel Box"
             case .fittingKit: return "Fitting Kit Box"
             case .drawerRunner: return "Drawer Runner Box"
+            case .hangingRail: return "Hanging Rail Box"
             }
         }
 
@@ -28,6 +34,7 @@ struct Box: Identifiable, Codable, Hashable {
             case .panel: return "shippingbox"
             case .fittingKit: return "wrench.and.screwdriver"
             case .drawerRunner: return "line.3.horizontal"
+            case .hangingRail: return "line.diagonal"
             }
         }
 
@@ -64,6 +71,8 @@ struct Box: Identifiable, Codable, Hashable {
                 return Dimensions(lengthMM: 250, widthMM: 150, heightMM: 100, weightKG: 2)
             case .drawerRunner:
                 return Dimensions(lengthMM: 400, widthMM: 200, heightMM: 200, weightKG: 5)
+            case .hangingRail:
+                return Dimensions(lengthMM: 800, widthMM: 10, heightMM: 10, weightKG: 2)
             }
         }
     }

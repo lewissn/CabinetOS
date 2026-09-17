@@ -31,7 +31,7 @@ struct SlideToCloseView: View {
     }
 
     private func label(maxOffset: CGFloat) -> some View {
-        let text: Text = Text("Slide to close box")
+        let text: Text = Text("Slide to wrap & close")
             .font(.subheadline.weight(.bold))
         return text
             .foregroundStyle(.orange.opacity(0.6))

@@ -14,6 +14,32 @@ struct ScannerView: View {
             ScanOverlayView()
                 .ignoresSafeArea()
 
+            // Reliable success flash banner — top of screen so it's never
+            // covered by the scan reticle or status pill. Independent of
+            // `scanState` so rapid state transitions in continuous mode
+            // can't suppress it.
+            VStack {
+                if let flashLabel = viewModel.successFlashLabel {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title3)
+                        Text("Added \(flashLabel)")
+                            .font(.subheadline.weight(.bold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(.green.opacity(0.95))
+                    .clipShape(Capsule())
+                    .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .padding(.top, 80)
+                }
+                Spacer()
+            }
+            .animation(.easeOut(duration: 0.18), value: viewModel.successFlashLabel)
+            .allowsHitTesting(false)
+
             // UI controls
             VStack {
                 // Top bar

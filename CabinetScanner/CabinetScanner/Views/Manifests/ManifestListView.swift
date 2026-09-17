@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ManifestListView: View {
     @StateObject private var viewModel = ManifestListViewModel()
-    @EnvironmentObject var appState: AppState
 
     var body: some View {
         Group {
@@ -22,7 +21,7 @@ struct ManifestListView: View {
                 ContentUnavailableView(
                     "No Manifests",
                     systemImage: "doc.text",
-                    description: Text("No active manifests found")
+                    description: Text("No active BJS manifests found")
                 )
             } else {
                 List(viewModel.manifests) { manifest in
@@ -35,7 +34,7 @@ struct ManifestListView: View {
                 }
             }
         }
-        .navigationTitle("Manifests")
+        .navigationTitle("BJS Manifests")
         .navigationDestination(for: Manifest.self) { manifest in
             ConsignmentListView(
                 viewModel: ConsignmentListViewModel(
@@ -43,16 +42,6 @@ struct ManifestListView: View {
                     manifestName: manifest.name
                 )
             )
-        }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    // Navigate to station settings
-                    appState.isStationConfigured = false
-                } label: {
-                    Image(systemName: "gearshape")
-                }
-            }
         }
         .task {
             await viewModel.loadManifests()

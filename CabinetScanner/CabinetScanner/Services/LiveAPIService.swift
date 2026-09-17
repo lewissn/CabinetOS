@@ -29,7 +29,21 @@ final class LiveAPIService: APIServiceProtocol {
 
     init(apiBase: String = Configuration.apiBase) {
         self.apiBase = apiBase
-        self.session = URLSession.shared
+
+        // Custom URLSession tuned for the warehouse environment:
+        //   • waitsForConnectivity = true — when Wi-Fi flickers, requests queue
+        //     and resume automatically instead of failing instantly.
+        //   • Tight per-request timeout so a hung request doesn't block the
+        //     queue forever; longer resource timeout for retries.
+        //   • Higher per-host connection limit so polling + scan + box-list
+        //     can proceed in parallel without head-of-line blocking.
+        let config = URLSessionConfiguration.default
+        config.waitsForConnectivity = true
+        config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = 60
+        config.httpMaximumConnectionsPerHost = 8
+        config.requestCachePolicy = .useProtocolCachePolicy
+        self.session = URLSession(configuration: config)
 
         self.decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -85,13 +99,16 @@ final class LiveAPIService: APIServiceProtocol {
         try await delete("/boxes/\(boxId)")
     }
 
-    func closeBox(boxId: String) async throws -> Box {
-        let response: OpsSingleBoxResponse = try await post("/boxes/\(boxId)/close", body: EmptyBody())
+    func closeBox(boxId: String, wrappedBy: String?, wrappedByDevice: String?) async throws -> Box {
+        let response: OpsSingleBoxResponse = try await post(
+            "/boxes/\(boxId)/close",
+            body: CloseBoxRequest(wrappedBy: wrappedBy, wrappedByDevice: wrappedByDevice)
+        )
         return response.box.toBox()
     }
 
-    func reopenBox(boxId: String, consignmentId: String) async throws {
-        let body = ReopenBoxRequest(boxId: boxId)
+    func reopenBox(boxId: String, consignmentId: String, reopenedByDevice: String?) async throws {
+        let body = ReopenBoxRequest(boxId: boxId, reopenedByDevice: reopenedByDevice)
         let _: OpsOkResponse = try await post("/consignments/\(consignmentId)/reopen-box", body: body)
     }
 
@@ -115,6 +132,28 @@ final class LiveAPIService: APIServiceProtocol {
         return try await post("/consignments/\(consignmentId)/finish", body: EmptyBody())
     }
 
+    // MARK: - Offline-capable scanning support
+
+    func fetchPanelRegistry(manifestId: String, projectName: String, etag: String?) async throws -> PanelRegistryResponse {
+        var items = [URLQueryItem(name: "projectName", value: projectName)]
+        if let etag = etag {
+            items.append(URLQueryItem(name: "etag", value: etag))
+        }
+        var components = URLComponents()
+        components.queryItems = items
+        let query = components.percentEncodedQuery ?? ""
+        let path = "/manifests/\(manifestId)/registry" + (query.isEmpty ? "" : "?\(query)")
+        return try await get(path)
+    }
+
+    func fetchPackedPanels(consignmentId: String) async throws -> PackedPanelsResponse {
+        return try await get("/consignments/\(consignmentId)/packed-panels")
+    }
+
+    func submitScanBatch(boxId: String, request: ScanBatchRequest) async throws -> ScanBatchResponse {
+        return try await post("/boxes/\(boxId)/scan-batch", body: request)
+    }
+
     // MARK: - HTTP helpers
 
     private func get<T: Decodable>(_ path: String) async throws -> T {
@@ -124,9 +163,7 @@ final class LiveAPIService: APIServiceProtocol {
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await session.data(for: req)
-        try validateResponse(response, data: data)
-        return try decoder.decode(T.self, from: data)
+        return try await sendWithRetry(req, allowsRetry: true)
     }
 
     private func post<B: Encodable, T: Decodable>(_ path: String, body: B) async throws -> T {
@@ -138,9 +175,40 @@ final class LiveAPIService: APIServiceProtocol {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.httpBody = try encoder.encode(body)
-        let (data, response) = try await session.data(for: req)
-        try validateResponse(response, data: data)
-        return try decoder.decode(T.self, from: data)
+        // Retry POSTs on transient errors only — the scan-batch endpoint is
+        // idempotent on (panel_uid) so duplicate inserts collapse harmlessly,
+        // and the legacy /scan endpoint catches duplicates server-side.
+        return try await sendWithRetry(req, allowsRetry: true)
+    }
+
+    /// Shared transport for GET/POST with bounded retries on transient errors.
+    /// Retries on 408 (timeout), 429 (rate-limited), 5xx, and URLError network
+    /// failures. Exponential backoff: 1s, 2s, 4s.
+    private func sendWithRetry<T: Decodable>(_ req: URLRequest, allowsRetry: Bool) async throws -> T {
+        let maxRetries = allowsRetry ? 2 : 0
+        var lastError: Error?
+        for attempt in 0...maxRetries {
+            do {
+                let (data, response) = try await session.data(for: req)
+                try validateResponse(response, data: data)
+                return try decoder.decode(T.self, from: data)
+            } catch let error as APIError {
+                if case .httpError(let code, _) = error,
+                   code == 408 || code == 429 || code >= 500 {
+                    lastError = error
+                } else {
+                    throw error
+                }
+            } catch {
+                lastError = error
+            }
+            if attempt < maxRetries {
+                // 1s, 2s, 4s
+                let delayNs = UInt64(1 << attempt) * 1_000_000_000
+                try? await Task.sleep(nanoseconds: delayNs)
+            }
+        }
+        throw lastError ?? APIError.invalidResponse
     }
 
     private func delete(_ path: String) async throws {
@@ -174,6 +242,7 @@ private struct EmptyBody: Encodable {}
 
 private struct ReopenBoxRequest: Encodable {
     let boxId: String
+    let reopenedByDevice: String?
 }
 
 private struct OpsOkResponse: Decodable {
@@ -201,7 +270,7 @@ private struct OpsManifest: Decodable {
     let created_at: String
 
     func toManifest() -> Manifest {
-        let date = ISO8601DateFormatter().date(from: created_at) ?? Date()
+        let date = DateFormatters.parseISO8601(created_at) ?? Date()
         let iosStatus: Manifest.ManifestStatus =
             (status == "completed" || status == "failed") ? .complete : .active
         return Manifest(
@@ -254,6 +323,11 @@ private struct OpsSingleBoxResponse: Decodable {
     let box: OpsBox
 }
 
+private struct CloseBoxRequest: Encodable {
+    let wrappedBy: String?
+    let wrappedByDevice: String?
+}
+
 private struct OpsBox: Decodable {
     let id: String
     let consignment_id: String
@@ -263,9 +337,12 @@ private struct OpsBox: Decodable {
     let item_count: Int?           // provided by GET /boxes endpoint
     let created_at: String
     let closed_at: String?
+    let wrapped_at: String?
+    let wrapped_by: String?
+    let wrapped_by_device: String?
+    let wrap_rework_count: Int?
 
     func toBox() -> Box {
-        let fmt = ISO8601DateFormatter()
         return Box(
             id: id,
             consignmentId: consignment_id,
@@ -273,8 +350,12 @@ private struct OpsBox: Decodable {
             boxType: Box.BoxType(rawValue: box_type) ?? .panel,
             status: (status == "CLOSED") ? .closed : .open,
             itemCount: item_count ?? 0,
-            createdAt: fmt.date(from: created_at) ?? Date(),
-            closedAt: closed_at.flatMap { fmt.date(from: $0) }
+            createdAt: DateFormatters.parseISO8601(created_at) ?? Date(),
+            closedAt: closed_at.flatMap { DateFormatters.parseISO8601($0) },
+            wrappedAt: wrapped_at.flatMap { DateFormatters.parseISO8601($0) },
+            wrappedBy: wrapped_by,
+            wrappedByDevice: wrapped_by_device,
+            wrapReworkCount: wrap_rework_count ?? 0
         )
     }
 }
@@ -306,7 +387,7 @@ private struct OpsPanel: Decodable {
             projectName: parts.count > 0 ? parts[0] : raw,
             cabinetName: parts.count > 1 ? parts[1] : "?",
             partNumber:  parts.count > 2 ? parts[2] : "?",
-            scannedAt: ISO8601DateFormatter().date(from: scanned_at) ?? Date(),
+            scannedAt: DateFormatters.parseISO8601(scanned_at) ?? Date(),
             deviceId: nil,     // not stored in despatch_box_panels
             operator_: nil     // not stored in despatch_box_panels
         )

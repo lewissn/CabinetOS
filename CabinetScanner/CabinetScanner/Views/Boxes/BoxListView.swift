@@ -1,13 +1,23 @@
 import SwiftUI
 
 struct BoxListView: View {
-    @ObservedObject var viewModel: BoxListViewModel
+    @StateObject private var viewModel: BoxListViewModel
+    @EnvironmentObject var appState: AppState
+    @Environment(\.dismiss) private var dismiss
     @State private var showAddMenu = false
     @State private var boxToDelete: Box?
 
+    init(consignment: Consignment, manifestId: String, manifestName: String) {
+        _viewModel = StateObject(wrappedValue: BoxListViewModel(
+            consignment: consignment,
+            manifestId: manifestId,
+            manifestName: manifestName
+        ))
+    }
+
     var body: some View {
         Group {
-            if viewModel.isLoading && viewModel.boxes.isEmpty {
+            if !viewModel.hasLoaded && viewModel.boxes.isEmpty {
                 ProgressView("Loading boxes...")
             } else {
                 List {
@@ -71,32 +81,35 @@ struct BoxListView: View {
         .navigationTitle(viewModel.consignment.displayTitle)
         .navigationDestination(for: Box.self) { box in
             BoxDetailView(
-                viewModel: BoxDetailViewModel(
-                    box: box,
-                    manifestId: viewModel.manifestId,
-                    consignmentId: viewModel.consignment.id,
-                    customerName: viewModel.consignment.customerName,
-                    manifestName: viewModel.manifestName
-                )
+                box: box,
+                manifestId: viewModel.manifestId,
+                consignmentId: viewModel.consignment.id,
+                customerName: viewModel.consignment.customerName,
+                manifestName: viewModel.manifestName
             )
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button {
-                        Task { await viewModel.createBox(type: .panel) }
+                        Task { await viewModel.createBox(type: .panel, wrappedBy: appState.operatorName, deviceId: appState.deviceId) }
                     } label: {
                         Label("Panel Box", systemImage: "shippingbox")
                     }
                     Button {
-                        Task { await viewModel.createBox(type: .fittingKit) }
+                        Task { await viewModel.createBox(type: .fittingKit, wrappedBy: appState.operatorName, deviceId: appState.deviceId) }
                     } label: {
                         Label("Fitting Kit Box", systemImage: "wrench.and.screwdriver")
                     }
                     Button {
-                        Task { await viewModel.createBox(type: .drawerRunner) }
+                        Task { await viewModel.createBox(type: .drawerRunner, wrappedBy: appState.operatorName, deviceId: appState.deviceId) }
                     } label: {
                         Label("Drawer Runner Box", systemImage: "line.3.horizontal")
+                    }
+                    Button {
+                        Task { await viewModel.createBox(type: .hangingRail, wrappedBy: appState.operatorName, deviceId: appState.deviceId) }
+                    } label: {
+                        Label("Hanging Rail Box", systemImage: "line.diagonal")
                     }
                 } label: {
                     Image(systemName: "plus")
@@ -129,6 +142,14 @@ struct BoxListView: View {
         }
         .task {
             await viewModel.loadBoxes()
+        }
+        .onChange(of: viewModel.isComplete) { _, complete in
+            if complete {
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    dismiss()
+                }
+            }
         }
     }
 }

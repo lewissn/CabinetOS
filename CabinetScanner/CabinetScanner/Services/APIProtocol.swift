@@ -12,8 +12,8 @@ protocol APIServiceProtocol {
     func createBox(consignmentId: String, boxType: Box.BoxType) async throws -> Box
     func fetchBoxDetail(boxId: String) async throws -> (Box, [BoxItem])
     func deleteBox(boxId: String) async throws
-    func closeBox(boxId: String) async throws -> Box
-    func reopenBox(boxId: String, consignmentId: String) async throws
+    func closeBox(boxId: String, wrappedBy: String?, wrappedByDevice: String?) async throws -> Box
+    func reopenBox(boxId: String, consignmentId: String, reopenedByDevice: String?) async throws
 
     // Items
     func scanItem(boxId: String, request: ScanRequest) async throws -> ScanResponse
@@ -21,6 +21,11 @@ protocol APIServiceProtocol {
 
     // Finish
     func finishConsignment(consignmentId: String) async throws -> FinishConsignmentResponse
+
+    // Offline-capable scanning support
+    func fetchPanelRegistry(manifestId: String, projectName: String, etag: String?) async throws -> PanelRegistryResponse
+    func fetchPackedPanels(consignmentId: String) async throws -> PackedPanelsResponse
+    func submitScanBatch(boxId: String, request: ScanBatchRequest) async throws -> ScanBatchResponse
 }
 
 struct ScanRequest: Codable {

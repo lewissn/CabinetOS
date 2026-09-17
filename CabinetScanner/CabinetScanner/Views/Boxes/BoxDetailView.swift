@@ -1,8 +1,9 @@
 import SwiftUI
 
 struct BoxDetailView: View {
-    @ObservedObject var viewModel: BoxDetailViewModel
+    @StateObject private var viewModel: BoxDetailViewModel
     @EnvironmentObject var appState: AppState
+    @ObservedObject private var network = NetworkMonitor.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var showScanner = false
@@ -10,6 +11,21 @@ struct BoxDetailView: View {
     @State private var itemToDelete: BoxItem?
     @State private var sliderValue: Double = 0
     @State private var showCloseConfirm = false
+    @State private var showPendingSync = false
+    @State private var showConflicts = false
+    @State private var showCloseWarning = false
+    @State private var showManualEntry = false
+    @State private var wrapReward: WrapReward?
+
+    init(box: Box, manifestId: String, consignmentId: String, customerName: String, manifestName: String) {
+        _viewModel = StateObject(wrappedValue: BoxDetailViewModel(
+            box: box,
+            manifestId: manifestId,
+            consignmentId: consignmentId,
+            customerName: customerName,
+            manifestName: manifestName
+        ))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -17,7 +33,11 @@ struct BoxDetailView: View {
                 Spacer()
                 fixedBoxInfo(dims)
                 Spacer()
-            } else if viewModel.items.isEmpty && !viewModel.isLoading {
+            } else if !viewModel.hasLoaded {
+                Spacer()
+                ProgressView("Loading items...")
+                Spacer()
+            } else if viewModel.items.isEmpty {
                 Spacer()
                 VStack(spacing: 12) {
                     Image(systemName: "barcode.viewfinder")
@@ -53,9 +73,83 @@ struct BoxDetailView: View {
 
             if viewModel.box.boxType.fixedDimensions == nil {
                 VStack(spacing: 12) {
+                    if Configuration.useOfflineQueue && !network.isOnline {
+                        OfflineBannerView()
+                    }
+
+                    if Configuration.useOfflineQueue && (viewModel.pendingCount > 0 || viewModel.conflictCount > 0) {
+                        HStack(spacing: 12) {
+                            if viewModel.pendingCount > 0 {
+                                Button { showPendingSync = true } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "arrow.triangle.2.circlepath")
+                                        Text("\(viewModel.pendingCount) pending sync")
+                                            .font(.footnote.weight(.medium))
+                                    }
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(.blue.opacity(0.12))
+                                    .foregroundStyle(.blue)
+                                    .clipShape(Capsule())
+                                }
+                            }
+                            if viewModel.conflictCount > 0 {
+                                Button { showConflicts = true } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "exclamationmark.triangle.fill")
+                                        Text("\(viewModel.conflictCount) conflicts")
+                                            .font(.footnote.weight(.medium))
+                                    }
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(.red.opacity(0.12))
+                                    .foregroundStyle(.red)
+                                    .clipShape(Capsule())
+                                }
+                            }
+                        }
+                    }
+
+                    if !viewModel.items.isEmpty {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text("\(viewModel.items.count) items scanned")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(.green.opacity(0.1))
+                        .clipShape(Capsule())
+                    }
+
+                    // Job-level progress: panels packed across all boxes of this
+                    // consignment vs. expected from the manifest registry.
+                    if Configuration.useOfflineQueue
+                        && viewModel.box.boxType == .panel
+                        && viewModel.jobExpectedCount > 0 {
+                        VStack(spacing: 6) {
+                            HStack {
+                                Text("Job progress")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text("\(viewModel.jobPackedCount) of \(viewModel.jobExpectedCount)")
+                                    .font(.caption.weight(.semibold))
+                                    .monospacedDigit()
+                                    .foregroundStyle(.primary)
+                            }
+                            ProgressView(
+                                value: Double(viewModel.jobPackedCount),
+                                total: Double(max(viewModel.jobExpectedCount, 1))
+                            )
+                            .tint(viewModel.jobPackedCount >= viewModel.jobExpectedCount ? .green : .blue)
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 8)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    }
+
                     if viewModel.box.isClosed {
                         Button {
-                            Task { await viewModel.reopenBox() }
+                            Task { await viewModel.reopenBox(deviceId: appState.deviceId) }
                         } label: {
                             Label("Reopen Box", systemImage: "lock.open.fill")
                                 .font(.headline)
@@ -79,14 +173,32 @@ struct BoxDetailView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 14))
                     }
 
+                    // Manual fallback for damaged / illegible labels. Kept
+                    // small + secondary so it doesn't compete with the
+                    // primary scan action.
+                    if Configuration.useOfflineQueue && viewModel.box.isOpen && viewModel.box.boxType == .panel {
+                        Button {
+                            showManualEntry = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "hand.tap")
+                                Text("Can't scan? Add manually")
+                            }
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(.blue)
+                            .padding(.vertical, 4)
+                        }
+                    }
+
                     if viewModel.box.isOpen && !viewModel.items.isEmpty {
                         SlideToCloseView(
                             onClose: {
-                                Task {
-                                    let closed = await viewModel.closeBox()
-                                    if closed {
-                                        // Stay on detail, just update state
-                                    }
+                                if Configuration.useOfflineQueue
+                                    && viewModel.box.boxType == .panel
+                                    && !viewModel.missingPanelUids.isEmpty {
+                                    showCloseWarning = true
+                                } else {
+                                    performClose()
                                 }
                             }
                         )
@@ -95,8 +207,20 @@ struct BoxDetailView: View {
                 .padding()
             }
         }
-        .navigationTitle("\(viewModel.box.boxType.displayName) #\(viewModel.box.boxNumber)")
+        .navigationTitle(viewModel.items.isEmpty
+            ? "\(viewModel.box.boxType.displayName) #\(viewModel.box.boxNumber)"
+            : "\(viewModel.box.boxType.displayName) #\(viewModel.box.boxNumber) (\(viewModel.items.count))"
+        )
         .toolbar {
+            if Configuration.useOfflineQueue {
+                ToolbarItem(placement: .topBarTrailing) {
+                    SyncBadgeView(
+                        pendingCount: viewModel.pendingCount,
+                        conflictCount: viewModel.conflictCount,
+                        isOnline: network.isOnline
+                    )
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button {
@@ -107,9 +231,14 @@ struct BoxDetailView: View {
 
                     if viewModel.box.isClosed && viewModel.box.boxType.fixedDimensions == nil {
                         Button {
-                            Task { await viewModel.reopenBox() }
+                            Task { await viewModel.reopenBox(deviceId: appState.deviceId) }
                         } label: {
                             Label("Reopen Box", systemImage: "lock.open.fill")
+                        }
+                    }
+                    if Configuration.useOfflineQueue && (viewModel.pendingCount > 0 || viewModel.conflictCount > 0) {
+                        Button { showPendingSync = true } label: {
+                            Label("Sync status", systemImage: "arrow.triangle.2.circlepath")
                         }
                     }
                     Button(role: .destructive) {
@@ -121,6 +250,31 @@ struct BoxDetailView: View {
                     Image(systemName: "ellipsis.circle")
                 }
             }
+        }
+        .navigationDestination(isPresented: $showPendingSync) {
+            PendingSyncView(
+                boxId: viewModel.box.id,
+                manifestId: viewModel.manifestId,
+                projectName: viewModel.projectName
+            )
+        }
+        .navigationDestination(isPresented: $showConflicts) {
+            ScanConflictsView(boxId: viewModel.box.id)
+        }
+        .confirmationDialog(
+            "This job still has missing panels",
+            isPresented: $showCloseWarning,
+            titleVisibility: .visible
+        ) {
+            Button("Close box anyway", role: .destructive) {
+                performClose()
+            }
+            Button("Keep open", role: .cancel) {}
+        } message: {
+            let count = viewModel.missingPanelUids.count
+            let preview = viewModel.missingPanelLabels.prefix(5).joined(separator: "\n")
+            let extra = count > 5 ? "\n…and \(count - 5) more" : ""
+            Text("\(count) panel\(count == 1 ? "" : "s") for \(viewModel.customerName) haven't been packed yet:\n\n\(preview)\(extra)")
         }
         .alert("Delete Item?", isPresented: .init(
             get: { itemToDelete != nil },
@@ -149,13 +303,25 @@ struct BoxDetailView: View {
         } message: {
             Text("This will permanently delete this box and all its contents.")
         }
+        .sheet(isPresented: $showManualEntry, onDismiss: {
+            Task { await viewModel.loadBoxDetail() }
+        }) {
+            ManualEntryView(
+                boxId: viewModel.box.id,
+                manifestId: viewModel.manifestId,
+                consignmentId: viewModel.consignmentId,
+                projectName: viewModel.projectName,
+                appState: appState
+            )
+        }
         .fullScreenCover(isPresented: $showScanner) {
             ScannerView(
                 viewModel: ScannerViewModel(
                     boxId: viewModel.box.id,
                     manifestId: viewModel.manifestId,
                     consignmentId: viewModel.consignmentId,
-                    appState: appState
+                    appState: appState,
+                    expectedProjectName: viewModel.projectName
                 ),
                 onDismiss: {
                     showScanner = false
@@ -167,6 +333,13 @@ struct BoxDetailView: View {
             ToastView(message: $viewModel.toastMessage)
                 .padding(.bottom, 120)
         }
+        .overlay {
+            if let wrapReward {
+                Color.black.opacity(0.25).ignoresSafeArea()
+                WrapRewardView(reward: wrapReward)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: wrapReward == nil)
         .onAppear {
             viewModel.startPolling()
         }
@@ -175,6 +348,29 @@ struct BoxDetailView: View {
         }
         .task {
             await viewModel.loadBoxDetail()
+        }
+    }
+
+    private func performClose() {
+        Task {
+            guard let reward = await viewModel.closeBox(
+                wrappedBy: appState.operatorName,
+                deviceId: appState.deviceId
+            ) else { return }
+
+            wrapReward = reward
+            if reward.isNewPersonalBest || reward.isMilestone {
+                HapticService.celebrate()
+            }
+
+            // Hold the reward on screen long enough to read before the view
+            // pops. Clearing local state first avoids a race where an
+            // auto-dismiss task writes into deallocated state on slower devices.
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            viewModel.stopPolling()
+            viewModel.toastMessage = nil
+            wrapReward = nil
+            dismiss()
         }
     }
 

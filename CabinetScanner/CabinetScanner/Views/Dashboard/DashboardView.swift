@@ -10,9 +10,12 @@ struct DispatchIntelligence {
     let dueTomorrow: Int
     let courierGroups: [CourierGroup]
     let inHouseJobs: [DispatchJob]
+    let todayJobs: [DispatchJob]
+    let tomorrowJobs: [DispatchJob]
 
     static let empty = DispatchIntelligence(
-        dueToday: 0, dueTomorrow: 0, courierGroups: [], inHouseJobs: []
+        dueToday: 0, dueTomorrow: 0, courierGroups: [], inHouseJobs: [],
+        todayJobs: [], tomorrowJobs: []
     )
 }
 
@@ -21,6 +24,8 @@ struct CourierGroup: Identifiable {
     let shippingMethod: String
     let dueToday: Int
     let dueTomorrow: Int
+    let todayJobs: [DispatchJob]
+    let tomorrowJobs: [DispatchJob]
 
     var hasJobs: Bool { dueToday > 0 || dueTomorrow > 0 }
 }
@@ -31,6 +36,7 @@ struct DispatchJob: Identifiable {
     let salesOrder: String
     let postcode: String?
     let dueDate: Date
+    let shippingMethod: String
 }
 
 extension Calendar {
@@ -68,6 +74,10 @@ final class DashboardService {
         var dueTomorrow = 0
         var methodTodayCounts: [String: Int] = [:]
         var methodTomorrowCounts: [String: Int] = [:]
+        var methodTodayJobs: [String: [DispatchJob]] = [:]
+        var methodTomorrowJobs: [String: [DispatchJob]] = [:]
+        var allTodayJobs: [DispatchJob] = []
+        var allTomorrowJobs: [DispatchJob] = []
         var inHouseJobs: [DispatchJob] = []
 
         for row in rows {
@@ -77,22 +87,33 @@ final class DashboardService {
             let isToday    = dayStart >= todayStart && dayStart < tomorrowStart
             let isTomorrow = dayStart >= tomorrowStart && dayStart < tomorrowEnd
 
-            if isToday    { dueToday += 1 }
-            if isTomorrow { dueTomorrow += 1 }
-
             let method = row.shippingMethod ?? "Other"
 
-            if isToday    { methodTodayCounts[method, default: 0] += 1 }
-            if isTomorrow { methodTomorrowCounts[method, default: 0] += 1 }
+            let job = DispatchJob(
+                id: row.stableId,
+                customer: row.customer ?? "Unknown",
+                salesOrder: row.salesOrderString ?? "—",
+                postcode: row.postcode,
+                dueDate: dueDate,
+                shippingMethod: method
+            )
+
+            if isToday {
+                dueToday += 1
+                methodTodayCounts[method, default: 0] += 1
+                methodTodayJobs[method, default: []].append(job)
+                allTodayJobs.append(job)
+            }
+
+            if isTomorrow {
+                dueTomorrow += 1
+                methodTomorrowCounts[method, default: 0] += 1
+                methodTomorrowJobs[method, default: []].append(job)
+                allTomorrowJobs.append(job)
+            }
 
             if Self.isInHouse(row.shippingMethod) && (isToday || isTomorrow) {
-                inHouseJobs.append(DispatchJob(
-                    id: row.stableId,
-                    customer: row.customer ?? "Unknown",
-                    salesOrder: row.salesOrderString ?? "—",
-                    postcode: row.postcode,
-                    dueDate: dueDate
-                ))
+                inHouseJobs.append(job)
             }
         }
 
@@ -102,7 +123,9 @@ final class DashboardService {
                 CourierGroup(
                     shippingMethod: method,
                     dueToday: methodTodayCounts[method] ?? 0,
-                    dueTomorrow: methodTomorrowCounts[method] ?? 0
+                    dueTomorrow: methodTomorrowCounts[method] ?? 0,
+                    todayJobs: methodTodayJobs[method] ?? [],
+                    tomorrowJobs: methodTomorrowJobs[method] ?? []
                 )
             }
             .filter { $0.hasJobs }
@@ -123,7 +146,9 @@ final class DashboardService {
             dueToday: dueToday,
             dueTomorrow: dueTomorrow,
             courierGroups: courierGroups,
-            inHouseJobs: inHouseJobs
+            inHouseJobs: inHouseJobs,
+            todayJobs: allTodayJobs,
+            tomorrowJobs: allTomorrowJobs
         )
     }
 
@@ -288,6 +313,36 @@ private extension String {
 // MARK: - ViewModel
 // ============================================================
 
+enum TileDetail: Identifiable {
+    case dueToday
+    case dueTomorrow
+    case courierGroup(CourierGroup)
+
+    var id: String {
+        switch self {
+        case .dueToday:              return "dueToday"
+        case .dueTomorrow:           return "dueTomorrow"
+        case .courierGroup(let g):   return "courier-\(g.shippingMethod)"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .dueToday:              return "Due Today"
+        case .dueTomorrow:           return "Due Tomorrow"
+        case .courierGroup(let g):   return g.shippingMethod
+        }
+    }
+
+    var accentColor: Color {
+        switch self {
+        case .dueToday:      return .blue
+        case .dueTomorrow:   return .orange
+        case .courierGroup:  return .blue
+        }
+    }
+}
+
 @MainActor
 final class DashboardViewModel: ObservableObject {
 
@@ -299,6 +354,7 @@ final class DashboardViewModel: ObservableObject {
 
     @Published private(set) var state: State = .loading
     @Published private(set) var intelligence: DispatchIntelligence = .empty
+    @Published var selectedTile: TileDetail?
 
     private let service = DashboardService()
 
@@ -327,6 +383,39 @@ final class DashboardViewModel: ObservableObject {
             state = .error(error.localizedDescription)
         }
     }
+
+    struct GroupedSection: Identifiable {
+        var id: String { title }
+        let title: String
+        let jobs: [DispatchJob]
+    }
+
+    func sections(for detail: TileDetail) -> [GroupedSection] {
+        switch detail {
+        case .dueToday:
+            return groupedByMethod(intelligence.todayJobs)
+
+        case .dueTomorrow:
+            return groupedByMethod(intelligence.tomorrowJobs)
+
+        case .courierGroup(let group):
+            var result: [GroupedSection] = []
+            if !group.todayJobs.isEmpty {
+                result.append(GroupedSection(title: "Due Today", jobs: group.todayJobs.sorted { $0.customer < $1.customer }))
+            }
+            if !group.tomorrowJobs.isEmpty {
+                result.append(GroupedSection(title: "Due Tomorrow", jobs: group.tomorrowJobs.sorted { $0.customer < $1.customer }))
+            }
+            return result
+        }
+    }
+
+    private func groupedByMethod(_ jobs: [DispatchJob]) -> [GroupedSection] {
+        let byMethod = Dictionary(grouping: jobs) { $0.shippingMethod }
+        return byMethod
+            .map { GroupedSection(title: $0.key, jobs: $0.value.sorted { $0.customer < $1.customer }) }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
 }
 
 // ============================================================
@@ -335,6 +424,9 @@ final class DashboardViewModel: ObservableObject {
 
 struct DashboardView: View {
     @StateObject private var vm = DashboardViewModel()
+    @StateObject private var apcVM = APCDeadlineViewModel()
+    @ObservedObject private var notifications = NotificationService.shared
+    @State private var showingNotifications = false
     var switchToPackaging: () -> Void = {}
 
     var body: some View {
@@ -342,17 +434,41 @@ struct DashboardView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     header
+                    APCDeadlineBannerView(viewModel: apcVM)
+                    // Above the numbers on purpose. A despatch date that has
+                    // moved changes what the numbers mean, so it has to be
+                    // read first.
+                    DespatchNoticeBoard(showingAll: $showingNotifications)
                     statsRow
                     courierSummarySection
                     inHouseLoadingSection
+                    reportsShortcut
                     packagingShortcut
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 32)
             }
             .background(Color(.systemGroupedBackground))
-            .refreshable { await vm.refresh() }
-            .task { await vm.refresh() }
+            .refreshable {
+                await vm.refresh()
+                await apcVM.refresh()
+                await notifications.refresh()
+            }
+            .task {
+                await vm.refresh()
+                await apcVM.refresh()
+                apcVM.startCountdown()
+                await notifications.refresh()
+            }
+            .sheet(isPresented: $showingNotifications) {
+                NotificationsView()
+            }
+            .onDisappear {
+                apcVM.stopCountdown()
+            }
+            .sheet(item: $vm.selectedTile) { detail in
+                TileDetailSheet(detail: detail, sections: vm.sections(for: detail))
+            }
         }
     }
 
@@ -371,11 +487,17 @@ struct DashboardView: View {
 
             Spacer()
 
+            // The way through to the full list, carrying the unread count.
+            // Not a sixth tab: iOS would collapse Stock and Settings behind
+            // "More", burying two screens the team already relies on.
+            NotificationBell { showingNotifications = true }
+                .offset(y: 4)
+
             Image("CabinetLogo")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 36, height: 36)
-                .offset(y: -2)
+                .frame(width: 86, height: 86)
+                .offset(y: -20)
         }
         .padding(.top, 16)
     }
@@ -392,10 +514,13 @@ struct DashboardView: View {
                          value: vm.intelligence.dueToday,
                          subtitle: "Jobs",
                          accentColor: .blue)
+                    .onTapGesture { vm.selectedTile = .dueToday }
+
                 StatCard(title: "Due Tomorrow",
                          value: vm.intelligence.dueTomorrow,
                          subtitle: "Jobs",
                          accentColor: .orange)
+                    .onTapGesture { vm.selectedTile = .dueTomorrow }
             }
         }
     }
@@ -425,6 +550,7 @@ struct DashboardView: View {
                 LazyVGrid(columns: tileColumns, spacing: 12) {
                     ForEach(vm.intelligence.courierGroups) { group in
                         CourierGroupTile(group: group)
+                            .onTapGesture { vm.selectedTile = .courierGroup(group) }
                     }
                 }
             }
@@ -459,6 +585,29 @@ struct DashboardView: View {
                 .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
             }
         }
+    }
+
+    // MARK: Reports shortcut
+
+    private var reportsShortcut: some View {
+        NavigationLink {
+            ReportingView()
+        } label: {
+            HStack {
+                Image(systemName: "chart.bar.fill")
+                    .foregroundStyle(.purple)
+                Text("Reports")
+                    .fontWeight(.medium)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(16)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Packaging shortcut
@@ -657,5 +806,130 @@ private struct InHouseJobRow: View {
             }
         }
         .padding(.vertical, 6)
+    }
+}
+
+// ============================================================
+// MARK: - Tile Detail Sheet
+// ============================================================
+
+private struct TileDetailSheet: View {
+    let detail: TileDetail
+    let sections: [DashboardViewModel.GroupedSection]
+    @Environment(\.dismiss) private var dismiss
+
+    private var totalJobs: Int {
+        sections.reduce(0) { $0 + $1.jobs.count }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if sections.isEmpty {
+                    emptyContent
+                } else {
+                    jobList
+                }
+            }
+            .navigationTitle(detail.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .fontWeight(.semibold)
+                }
+            }
+        }
+    }
+
+    private var jobList: some View {
+        List {
+            ForEach(sections) { section in
+                Section {
+                    ForEach(section.jobs) { job in
+                        DetailJobRow(job: job, accentColor: detail.accentColor)
+                    }
+                } header: {
+                    HStack {
+                        Text(section.title)
+                        Spacer()
+                        Text("\(section.jobs.count)")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(detail.accentColor, in: Capsule())
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            summaryBar
+        }
+    }
+
+    private var summaryBar: some View {
+        HStack {
+            Label("\(totalJobs) job\(totalJobs == 1 ? "" : "s")", systemImage: "shippingbox.fill")
+                .font(.subheadline)
+                .fontWeight(.medium)
+
+            Spacer()
+
+            Text("\(sections.count) group\(sections.count == 1 ? "" : "s")")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(.regularMaterial)
+    }
+
+    private var emptyContent: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 44))
+                .foregroundStyle(.green)
+            Text("No jobs found")
+                .font(.headline)
+            Text("There are no jobs for this category.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct DetailJobRow: View {
+    let job: DispatchJob
+    var accentColor: Color = .blue
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(job.customer)
+                    .font(.body)
+                    .fontWeight(.medium)
+
+                Text("SO \(job.salesOrder)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 4)
+
+            if let postcode = job.postcode, !postcode.isEmpty {
+                Text(postcode)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(accentColor.opacity(0.1), in: Capsule())
+                    .foregroundStyle(accentColor)
+            }
+        }
+        .padding(.vertical, 2)
     }
 }

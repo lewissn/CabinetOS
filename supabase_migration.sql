@@ -49,3 +49,76 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON purchase_list TO anon, authenticated, se
 -- Uncomment if your jobs table does not yet have a postcode column:
 --
 -- ALTER TABLE jobs ADD COLUMN IF NOT EXISTS postcode TEXT;
+
+
+-- ============================================================
+-- 4. Manual Manifests (courier shipments)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS manual_manifests (
+    id           UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    manifest_name TEXT NOT NULL,
+    manifest_type TEXT NOT NULL DEFAULT 'manual',
+    courier      TEXT,
+    status       TEXT NOT NULL DEFAULT 'open',   -- 'open' | 'finished'
+    note         TEXT,
+    created_by   UUID,
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE manual_manifests ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "manual_manifests_all_access"
+    ON manual_manifests FOR ALL
+    USING (true)
+    WITH CHECK (true);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON manual_manifests TO anon, authenticated, service_role;
+
+
+-- 5. Manual Manifest Boxes
+CREATE TABLE IF NOT EXISTS manual_manifest_boxes (
+    id           UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    manifest_id  UUID NOT NULL REFERENCES manual_manifests(id) ON DELETE CASCADE,
+    box_number   INTEGER NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'open',   -- 'open' | 'closed'
+    length_mm    INTEGER,
+    width_mm     INTEGER,
+    height_mm    INTEGER,
+    weight_kg    NUMERIC,
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE manual_manifest_boxes ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "manual_manifest_boxes_all_access"
+    ON manual_manifest_boxes FOR ALL
+    USING (true)
+    WITH CHECK (true);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON manual_manifest_boxes TO anon, authenticated, service_role;
+
+
+-- 6. Manual Manifest Items (scanned labels + manual hardware items)
+CREATE TABLE IF NOT EXISTS manual_manifest_items (
+    id               UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    box_id           UUID NOT NULL REFERENCES manual_manifest_boxes(id) ON DELETE CASCADE,
+    item_type        TEXT NOT NULL DEFAULT 'label',   -- 'label' | 'manual'
+    project_name     TEXT,
+    cabinet_name     TEXT,
+    part_number      TEXT,
+    manual_item_name TEXT,
+    qty              INTEGER NOT NULL DEFAULT 1,
+    created_at       TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE manual_manifest_items ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "manual_manifest_items_all_access"
+    ON manual_manifest_items FOR ALL
+    USING (true)
+    WITH CHECK (true);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON manual_manifest_items TO anon, authenticated, service_role;
