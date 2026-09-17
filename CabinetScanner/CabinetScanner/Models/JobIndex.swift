@@ -516,3 +516,78 @@ struct ProductionJob: Decodable, Identifiable, Hashable {
         return nil
     }
 }
+
+// MARK: - Courier consignments
+//
+// A "manual manifest" is the consignment for one job: one customer, one
+// courier, a handful of boxes. Raising one from the job page fills in the name
+// and links it back, so finishing it can move the job on in ShopVOX.
+
+struct CourierConsignmentInfo: Decodable {
+    let ok: Bool
+    /// What to put in the name field. Follows the shape the bench has been
+    /// typing for 554 consignments — "customer - #shopify" — and is editable.
+    let suggestedName: String
+    /// The shipping method on the ShopVOX order, as a starting point.
+    let suggestedCourier: String?
+    let existing: [CourierConsignment]
+    /// Present when one is already open for this job. A job can ship in two
+    /// parts, so this is a warning rather than a block.
+    let openConsignment: CourierConsignment?
+    /// False for a record with no ShopVOX job behind it — finishing a
+    /// consignment for one cannot move any workflow.
+    let canCompleteSteps: Bool
+}
+
+struct CourierConsignment: Decodable, Identifiable, Hashable {
+    let id: String
+    let manifestName: String
+    let courier: String?
+    let status: String
+    let createdAt: String?
+    let stepsCompletedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case manifestName = "manifest_name"
+        case courier, status
+        case createdAt = "created_at"
+        case stepsCompletedAt = "steps_completed_at"
+    }
+
+    var isOpen: Bool { status == "open" }
+    var hasMovedTheJobOn: Bool { stepsCompletedAt != nil }
+}
+
+struct CourierConsignmentCreated: Decodable {
+    let ok: Bool
+    let consignment: CourierConsignment?
+    /// Set when this job already had an open consignment — the app says so
+    /// rather than silently creating a second.
+    let alreadyOpen: CourierConsignment?
+    let canCompleteSteps: Bool?
+    let error: String?
+}
+
+struct CourierConsignmentFinished: Decodable {
+    let ok: Bool
+    let finished: Bool?
+    /// True only when ShopVOX accepted every step.
+    let stepsCompleted: Bool?
+    /// True when this consignment had already moved the job on. Nothing was
+    /// sent again — ShopVOX cannot un-complete a step.
+    let alreadyCompleted: Bool?
+    let steps: [CourierConsignmentStep]?
+    let message: String?
+    let error: String?
+}
+
+struct CourierConsignmentStep: Decodable, Identifiable, Hashable {
+    let ok: Bool
+    let stepName: String
+    let reason: String
+    let message: String
+    let state: String?
+
+    var id: String { stepName }
+}

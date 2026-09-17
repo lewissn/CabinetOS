@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A1000000000000000000002D /* JobConsignmentSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000002D /* JobConsignmentSection.swift */; };
 		1D6DA56B2F4F5DDE00DEE6A8 /* StockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D6DA5692F4F5DDE00DEE6A8 /* StockView.swift */; };
 		A10000000000000000000001 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* AppState.swift */; };
 		A10000000000000000000002 /* CabinetScannerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* CabinetScannerApp.swift */; };
@@ -98,6 +99,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		B1000000000000000000002D /* JobConsignmentSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobConsignmentSection.swift; sourceTree = "<group>"; };
 		1D6DA5692F4F5DDE00DEE6A8 /* StockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockView.swift; sourceTree = "<group>"; };
 		B10000000000000000000001 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		B10000000000000000000002 /* CabinetScannerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CabinetScannerApp.swift; sourceTree = "<group>"; };
@@ -437,6 +439,7 @@
 		E10000000000000000000013 /* Jobs */ = {
 			isa = PBXGroup;
 			children = (
+				B1000000000000000000002D /* JobConsignmentSection.swift */,
 				B10000000000000000000069 /* ProofViewerView.swift */,
 				B10000000000000000000068 /* JobsHubView.swift */,
 				B10000000000000000000065 /* JobSearchView.swift */,
@@ -524,6 +527,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1000000000000000000002D /* JobConsignmentSection.swift in Sources */,
 				A1000000000000000000002C /* DeepLink.swift in Sources */,
 				A1000000000000000000002A /* DespatchNoticeBoard.swift in Sources */,
 				A10000000000000000000028 /* NotificationsView.swift in Sources */,

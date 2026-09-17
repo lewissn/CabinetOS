@@ -11,6 +11,18 @@ struct ManualManifest: Identifiable, Hashable {
     let createdAt: Date
     let updatedAt: Date
 
+    /// The job this consignment is for, when it was raised from a job page.
+    /// Null for the 554 typed by hand before that existed — those finish
+    /// exactly as they always have.
+    var jobIndexId: String?
+    /// "SO 9731", denormalised so it still reads after the job is gone.
+    var jobReference: String?
+    /// When finishing this completed the job's steps in ShopVOX. Set once.
+    var stepsCompletedAt: Date?
+
+    /// Whether finishing this should move a job on in ShopVOX.
+    var movesAJobOn: Bool { jobIndexId != nil }
+
     enum ManualManifestStatus: String, Codable {
         case open
         case finished

@@ -109,6 +109,14 @@ private struct StepActionRequest: Encodable {
     let requestId: String
 }
 
+private struct EmptyBody: Encodable {}
+
+private struct CreateConsignmentBody: Encodable {
+    let name: String
+    let courier: String?
+    let note: String?
+}
+
 private struct MarkReadRequest: Encodable {
     let ids: [String]?
     let all: Bool?
@@ -298,6 +306,47 @@ final class JobIndexService {
         return request
     }
 
+    // MARK: - Courier consignments
+
+    /// What a consignment for this job would be called, and whether one is
+    /// already open. Read before showing the form, so the name is filled in
+    /// and an existing consignment can be pointed at rather than duplicated.
+    func consignmentInfo(jobId: String) async throws -> CourierConsignmentInfo {
+        let job = jobId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? jobId
+        return try await get(
+            URL(string: apiRoot + "/job-index/\(job)/consignment"),
+            missingMeans: .notFound
+        )
+    }
+
+    func createConsignment(
+        jobId: String,
+        name: String,
+        courier: String?,
+        note: String?
+    ) async throws -> CourierConsignmentCreated {
+        let job = jobId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? jobId
+        guard let url = URL(string: apiRoot + "/job-index/\(job)/consignment") else {
+            throw JobIndexError.notConfigured
+        }
+        return try await post(url, body: CreateConsignmentBody(name: name, courier: courier, note: note))
+    }
+
+    /// Finish a consignment, completing the job's packing steps in ShopVOX.
+    ///
+    /// Goes through Ops rather than writing to Supabase directly, because the
+    /// ShopVOX credentials live on the server and the two completions have to
+    /// be recorded and de-duplicated somewhere a second tap cannot reach.
+    func finishConsignment(jobId: String, manifestId: String) async throws -> CourierConsignmentFinished {
+        let job = jobId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? jobId
+        let manifest = manifestId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? manifestId
+        guard let url = URL(string: apiRoot + "/job-index/\(job)/consignment/\(manifest)/finish") else {
+            throw JobIndexError.notConfigured
+        }
+        // Two ShopVOX writes, each followed by a re-read.
+        return try await post(url, body: EmptyBody(), timeout: 90)
+    }
+
     // MARK: - Notifications
 
     func notifications(since: String? = nil, limit: Int = 50) async throws -> NotificationFeed {
@@ -330,6 +379,44 @@ final class JobIndexService {
 
         let (_, http) = try await send(request)
         return (200...299).contains(http.statusCode)
+    }
+
+    // MARK: - POST transport
+
+    private func post<Body: Encodable, T: Decodable>(
+        _ url: URL,
+        body: Body,
+        timeout: TimeInterval = 45
+    ) async throws -> T {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = timeout
+        request.httpBody = try JSONEncoder().encode(body)
+
+        guard let token = Configuration.deviceAPIToken, !token.isEmpty else {
+            throw JobIndexError.noTokenOnDevice
+        }
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let (data, http) = try await send(request)
+
+        if http.statusCode == 401 || http.statusCode == 403 {
+            let error = try? decoder.decode(APIErrorBody.self, from: data)
+            throw JobIndexError.unauthorised(serverMessage: error?.error, reason: error?.reason)
+        }
+
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            // A structured refusal is still worth surfacing in the server's
+            // own words rather than as a decode failure.
+            if let error = try? decoder.decode(APIErrorBody.self, from: data), let message = error.error {
+                throw JobIndexError.decoding(message)
+            }
+            throw JobIndexError.server(http.statusCode)
+        }
     }
 
     // MARK: - Device check

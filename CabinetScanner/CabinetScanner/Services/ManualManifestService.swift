@@ -332,6 +332,12 @@ private struct MMManifestRow: Decodable {
     let created_at: String
     let updated_at: String
 
+    // Added when consignments could be raised from a job page. Optional so a
+    // response from before the migration still decodes.
+    let job_index_id: String?
+    let job_reference: String?
+    let steps_completed_at: String?
+
     func toModel() -> ManualManifest {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -342,7 +348,10 @@ private struct MMManifestRow: Decodable {
             status: ManualManifest.ManualManifestStatus(rawValue: status) ?? .open,
             note: note,
             createdAt: iso.date(from: created_at) ?? Date(),
-            updatedAt: iso.date(from: updated_at) ?? Date()
+            updatedAt: iso.date(from: updated_at) ?? Date(),
+            jobIndexId: job_index_id,
+            jobReference: job_reference,
+            stepsCompletedAt: steps_completed_at.flatMap { iso.date(from: $0) }
         )
     }
 }

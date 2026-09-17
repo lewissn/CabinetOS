@@ -96,6 +96,10 @@ struct JobDetailView: View {
             }
             if let items = detail.lineItems, !items.isEmpty { lineItemsSection(items) }
 
+            // Directly under the workflow, because raising one and finishing
+            // one are both workflow actions — finishing completes two steps.
+            JobConsignmentSection(jobId: jobId)
+
             if !detail.steps.isEmpty {
                 stepsSection(detail.steps, capabilities: detail.workflowCapabilities)
             }
