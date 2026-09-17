@@ -135,6 +135,14 @@ struct JobDetail: Decodable {
     let instructions: JobInstructions?
     let lineItems: [JobLineItem]?
 
+    /// Which step to put in front of the person.
+    ///
+    /// Decided by the server rather than here, because ShopVOX's own
+    /// `currentStepName` points at an already-completed step on more than half
+    /// the jobs in the index — so the app and the website would each have to
+    /// work around it, and could disagree.
+    let focusStep: FocusStep?
+
     let team: JobTeam?
     let proof: JobProof?
 
@@ -278,6 +286,17 @@ struct JobProduction: Decodable {
         currentStep == nil && currentStepGroup == nil && currentStage == nil
             && workflowState == nil && daysLeft == nil
     }
+}
+
+/// The server's pick of the step to lead with.
+struct FocusStep: Decodable {
+    /// ShopVOX's step id, when known. Null for a step reconstructed from a
+    /// status change, which can be shown but not moved.
+    let id: String?
+    let name: String
+    let state: String
+    /// True when there is nothing left to do on this job at all.
+    let isEverythingDone: Bool
 }
 
 /// The people ShopVOX has attached to the job.

@@ -131,7 +131,8 @@ struct JobDetailView: View {
                 CurrentStepCard(
                     step: step,
                     stageName: detail.production.currentStage ?? step.group,
-                    hasLaterSteps: detail.steps.contains { !$0.isComplete },
+                    isEverythingDone: detail.focusStep?.isEverythingDone
+                        ?? detail.steps.allSatisfy(\.isComplete),
                     isMoving: viewModel.isMoving(step),
                     isAnyMoving: viewModel.isAnyStepMoving,
                     perform: { action in
@@ -144,18 +145,22 @@ struct JobDetailView: View {
         }
     }
 
-    /// The step ShopVOX says the job is on, matched to the row we hold for it.
+    /// The step to lead with, as chosen by the server.
     ///
-    /// Matched by name because that is the only thing `currentStepName` gives
-    /// us. When it matches nothing — an unmapped step, or a job whose steps
-    /// have not been read in full — the card is simply not shown, and the
-    /// workflow list below is still there.
+    /// Matched back to our own row by name, which is unique per job. Falls
+    /// back to ShopVOX's `currentStepName` only for a response from a deploy
+    /// that predates `focusStep` — and that fallback is why the card used to
+    /// show a completed step with no action on more than half of all jobs.
     private func currentStep(_ detail: JobDetail) -> JobStep? {
+        if let focus = detail.focusStep,
+           let match = detail.steps.first(where: { $0.name == focus.name }) {
+            return match
+        }
         if let name = detail.production.currentStep,
            let match = detail.steps.first(where: { $0.name == name }) {
             return match
         }
-        return nil
+        return detail.steps.first { !$0.isComplete } ?? detail.steps.last
     }
 
     // MARK: - Sections
@@ -720,10 +725,10 @@ enum JobTextFormatting {
 private struct CurrentStepCard: View {
     let step: JobStep
     let stageName: String?
-    /// Whether anything is left after this one. "The next step is below" is
-    /// not true of a finished job, and saying it sends somebody scrolling for
-    /// a step that does not exist.
-    let hasLaterSteps: Bool
+    /// Whether the whole job is finished. "The next step is below" is not
+    /// true of a finished job, and saying it sends somebody scrolling for a
+    /// step that does not exist.
+    let isEverythingDone: Bool
     let isMoving: Bool
     let isAnyMoving: Bool
     let perform: (StepActionKind) -> Void
@@ -847,9 +852,9 @@ private struct CurrentStepCard: View {
 
     private var blockedReason: String? {
         if step.isComplete {
-            return hasLaterSteps
-                ? "This step is done. The next one is in the workflow below."
-                : "Every step on this job is done."
+            return isEverythingDone
+                ? "Every step on this job is done."
+                : "This step is done. The next one is in the workflow below."
         }
         return step.action(.start)?.reason
             ?? "This step cannot be moved from the app."
