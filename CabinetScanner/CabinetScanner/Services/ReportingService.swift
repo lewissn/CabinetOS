@@ -55,8 +55,8 @@ final class ReportingService {
     private func fetchConsignments(from start: String, to end: String) async throws -> [RptConsignmentRow] {
         let urlString = Configuration.supabaseURL + "/rest/v1/despatch_consignments"
             + "?select=id,status,started_at,completed_at,created_at"
-            + "&created_at=gte.\(start)"
-            + "&created_at=lt.\(end)"
+            + "&created_at=gte.\(Self.encodeFilterValue(start))"
+            + "&created_at=lt.\(Self.encodeFilterValue(end))"
             + "&order=created_at.asc"
 
         return try await supabaseGet(urlString)
@@ -65,8 +65,8 @@ final class ReportingService {
     private func fetchBoxes(from start: String, to end: String) async throws -> [RptBoxRow] {
         let urlString = Configuration.supabaseURL + "/rest/v1/despatch_boxes"
             + "?select=id,consignment_id,opened_at,closed_at,created_at"
-            + "&created_at=gte.\(start)"
-            + "&created_at=lt.\(end)"
+            + "&created_at=gte.\(Self.encodeFilterValue(start))"
+            + "&created_at=lt.\(Self.encodeFilterValue(end))"
             + "&order=created_at.asc"
 
         return try await supabaseGet(urlString)
@@ -75,8 +75,8 @@ final class ReportingService {
     private func fetchPanels(from start: String, to end: String) async throws -> [RptPanelRow] {
         let urlString = Configuration.supabaseURL + "/rest/v1/despatch_box_panels"
             + "?select=id,box_id,scanned_at"
-            + "&scanned_at=gte.\(start)"
-            + "&scanned_at=lt.\(end)"
+            + "&scanned_at=gte.\(Self.encodeFilterValue(start))"
+            + "&scanned_at=lt.\(Self.encodeFilterValue(end))"
             + "&order=scanned_at.asc"
 
         return try await supabaseGet(urlString)
@@ -88,8 +88,8 @@ final class ReportingService {
     private func fetchWrappedBoxes(from start: String, to end: String) async throws -> [RptWrappedBoxRow] {
         let urlString = Configuration.supabaseURL + "/rest/v1/despatch_boxes"
             + "?select=id,box_type,wrapped_at,wrapped_by,wrapped_by_device,wrap_rework_count"
-            + "&wrapped_at=gte.\(start)"
-            + "&wrapped_at=lt.\(end)"
+            + "&wrapped_at=gte.\(Self.encodeFilterValue(start))"
+            + "&wrapped_at=lt.\(Self.encodeFilterValue(end))"
             + "&order=wrapped_at.asc"
 
         return try await supabaseGet(urlString)
@@ -242,7 +242,7 @@ final class ReportingService {
 
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-            throw ReportingError.httpError(code)
+            throw ReportingError.httpError(code, detail: Self.describe(data))
         }
 
         do {
@@ -259,12 +259,56 @@ final class ReportingService {
 
     // MARK: - Formatters
 
+    /// Timestamps for PostgREST filters, in UTC.
+    ///
+    /// UTC deliberately, not Europe/London. A London timestamp in summer is
+    /// written "2026-09-11T00:00:00+01:00", and a "+" in a URL query string
+    /// means a SPACE — so PostgREST received "2026-09-11T00:00:00 01:00" and
+    /// answered 400 for the whole of British Summer Time. Reports worked every
+    /// winter and broke every March.
+    ///
+    /// The instant is identical either way; UTC just cannot produce the
+    /// character that breaks it. `encodeFilterValue` below is the belt to this
+    /// pair of braces, so a future value with a "+" in it is safe regardless.
     private static let isoFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
-        f.timeZone = TimeZone(identifier: "Europe/London")
+        f.timeZone = TimeZone(identifier: "UTC")
         return f
     }()
+
+    /// Percent-encode a value going into a PostgREST filter.
+    ///
+    /// `URLComponents` is no help here: "+" is legal in a query string, so it
+    /// passes it through unescaped and the server still reads it as a space.
+    /// The character set below is `urlQueryAllowed` minus the characters that
+    /// carry meaning in a query — which is what makes this correct for any
+    /// value, not just the timestamps that exposed it.
+    static func encodeFilterValue(_ value: String) -> String {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "+&=?#")
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+    }
+
+    /// PostgREST's own words for a failure, when it sent any.
+    ///
+    /// It answers with `{ message, details, hint, code }`. The message alone
+    /// is what a person needs; the rest is noise on a phone screen.
+    private static func describe(_ data: Data) -> String? {
+        struct Body: Decodable {
+            let message: String?
+            let hint: String?
+        }
+        guard let body = try? JSONDecoder().decode(Body.self, from: data) else {
+            let text = String(data: data.prefix(200), encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return (text?.isEmpty ?? true) ? nil : text
+        }
+        if let hint = body.hint, let message = body.message {
+            return "\(message) \(hint)"
+        }
+        return body.message
+    }
 
     private static func parseISO(_ string: String) -> Date? {
         let f = ISO8601DateFormatter()
@@ -349,12 +393,24 @@ private struct WrapperScore {
 
 enum ReportingError: LocalizedError {
     case badURL
-    case httpError(Int)
+    /// The status AND what the server said about it.
+    ///
+    /// The detail is the whole point. This screen reported a bare "HTTP 400"
+    /// for months while the server was saying "invalid input syntax for type
+    /// timestamp with time zone" every single time — which names the fault
+    /// outright. Throwing that away turned a five-minute bug into a standing
+    /// one nobody could start on.
+    case httpError(Int, detail: String?)
 
     var errorDescription: String? {
         switch self {
-        case .badURL:              return "Invalid Supabase URL configuration."
-        case .httpError(let code): return "Server returned HTTP \(code)."
+        case .badURL:
+            return "Invalid Supabase URL configuration."
+        case .httpError(let code, let detail):
+            guard let detail, !detail.isEmpty else {
+                return "Reports could not be loaded (HTTP \(code))."
+            }
+            return "Reports could not be loaded (HTTP \(code)). \(detail)"
         }
     }
 }

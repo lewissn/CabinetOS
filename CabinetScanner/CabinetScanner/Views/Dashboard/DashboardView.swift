@@ -426,27 +426,34 @@ struct DashboardView: View {
     @StateObject private var vm = DashboardViewModel()
     @StateObject private var apcVM = APCDeadlineViewModel()
     @ObservedObject private var notifications = NotificationService.shared
+    @StateObject private var search = JobSearchViewModel()
     @State private var showingNotifications = false
     var switchToPackaging: () -> Void = {}
 
+    /// Typing replaces the dashboard with results, exactly as it does on the
+    /// Jobs tab. Looking a job up is the most common reason to pick the iPad
+    /// up, and making somebody change tab first to do it was a step for
+    /// nothing.
+    private var isSearching: Bool { !search.trimmedQuery.isEmpty }
+
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    header
-                    APCDeadlineBannerView(viewModel: apcVM)
-                    // Above the numbers on purpose. A despatch date that has
-                    // moved changes what the numbers mean, so it has to be
-                    // read first.
-                    DespatchNoticeBoard(showingAll: $showingNotifications)
-                    statsRow
-                    courierSummarySection
-                    inHouseLoadingSection
-                    reportsShortcut
-                    packagingShortcut
+            Group {
+                if isSearching {
+                    JobSearchResults(viewModel: search)
+                } else {
+                    dashboardContent
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 32)
+            }
+            .searchable(
+                text: $search.query,
+                placement: .navigationBarDrawer(displayMode: .always),
+                prompt: "Sales order, customer, Shopify number…"
+            )
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+            .navigationDestination(for: JobSearchResult.self) { result in
+                JobDetailView(jobId: result.id, knownTitle: result.displayTitle)
             }
             .background(Color(.systemGroupedBackground))
             .refreshable {
@@ -469,6 +476,27 @@ struct DashboardView: View {
             .sheet(item: $vm.selectedTile) { detail in
                 TileDetailSheet(detail: detail, sections: vm.sections(for: detail))
             }
+        }
+    }
+
+    // MARK: Dashboard
+
+    private var dashboardContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                header
+                APCDeadlineBannerView(viewModel: apcVM)
+                // Above the numbers on purpose. A despatch date that has moved
+                // changes what the numbers mean, so it has to be read first.
+                DespatchNoticeBoard(showingAll: $showingNotifications)
+                statsRow
+                courierSummarySection
+                inHouseLoadingSection
+                reportsShortcut
+                packagingShortcut
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 32)
         }
     }
 
