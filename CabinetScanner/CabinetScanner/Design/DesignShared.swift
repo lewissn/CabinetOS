@@ -276,6 +276,42 @@ extension View {
     }
 }
 
+// MARK: - Lists that keep swipe actions
+//
+// Where a screen needs swipe-to-delete it stays a List, drawn as Paper:
+// no backgrounds, no system separators (rows draw their own hairline), the
+// 28 pt margins and a readable column on iPad.
+
+/// A NavigationLink inside a List without the system's disclosure chevron
+/// (the row draws its own).
+struct ListLinkRow<Value: Hashable, Content: View>: View {
+    let value: Value
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        ZStack {
+            NavigationLink(value: value) { EmptyView() }.opacity(0)
+            content()
+        }
+    }
+}
+
+extension View {
+    func paperListRow(top: CGFloat = 0, bottom: CGFloat = 0) -> some View {
+        listRowInsets(EdgeInsets(top: top, leading: PaperSpace.margin, bottom: bottom, trailing: PaperSpace.margin))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+
+    func paperList() -> some View {
+        listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .environment(\.defaultMinListRowHeight, 0)
+            .frame(maxWidth: 720 + PaperSpace.margin * 2)
+            .frame(maxWidth: .infinity)
+    }
+}
+
 /// Pushed screens hide the system bar and use PaperTopBar.
 struct PushedScreen<Trailing: View, Content: View>: View {
     let back: String
@@ -370,6 +406,17 @@ extension SheetScreen where Trailing == EmptyView {
     init(_ title: String?, scrolls: Bool = true, @ViewBuilder content: @escaping () -> Content) {
         self.init(title, scrolls: scrolls, trailing: { EmptyView() }, content: content)
     }
+}
+
+// MARK: - App-wide toast
+//
+// For a confirmation that should outlive the screen that caused it, such as
+// "Box 3 closed · 14 panels" as the box screen pops back to the list.
+
+@MainActor
+final class Toaster: ObservableObject {
+    @Published var message: String?
+    func show(_ text: String) { message = text }
 }
 
 // MARK: - Formatting

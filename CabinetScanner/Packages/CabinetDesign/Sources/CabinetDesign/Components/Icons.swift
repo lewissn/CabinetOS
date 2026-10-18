@@ -8,6 +8,8 @@ public enum PaperGlyph: Sendable, CaseIterable {
     case swap, search, scan, check
     // Workshop glyphs (CabinetOS concept)
     case today, job, box, truck, printer, bell, station, stock, pause, play, alert, qr, settings, keyboard, minus
+    // Added for the CabinetScanner refresh
+    case torch, more, offline, sync, trash
 
     public func path(in rect: CGRect) -> Path {
         let s = min(rect.width, rect.height) / 24
@@ -122,6 +124,30 @@ public enum PaperGlyph: Sendable, CaseIterable {
             path.move(to: p(8, 14)); path.addLine(to: p(16, 14))
         case .minus:
             path.move(to: p(5, 12)); path.addLine(to: p(19, 12))
+        case .torch:
+            path.move(to: p(7, 3.5)); path.addLine(to: p(17, 3.5)); path.addLine(to: p(17, 7)); path.addLine(to: p(14.5, 11))
+            path.addLine(to: p(14.5, 20.5)); path.addLine(to: p(9.5, 20.5)); path.addLine(to: p(9.5, 11)); path.addLine(to: p(7, 7)); path.closeSubpath()
+            path.move(to: p(7, 7)); path.addLine(to: p(17, 7))
+            path.move(to: p(12, 13.5)); path.addLine(to: p(12, 15.5))
+        case .more:
+            for x in [CGFloat(6), 12, 18] { path.addEllipse(in: circle(x, 12, 0.9)) }
+        case .offline:
+            path.addArc(center: p(12, 19), radius: 4 * s, startAngle: .degrees(225), endAngle: .degrees(315), clockwise: false)
+            path.move(to: p(12 + 8.5 * cos(.pi * 1.25), 19 + 8.5 * sin(.pi * 1.25)))
+            path.addArc(center: p(12, 19), radius: 8.5 * s, startAngle: .degrees(225), endAngle: .degrees(315), clockwise: false)
+            path.move(to: p(12, 19)); path.addLine(to: p(12, 19.1))
+            path.move(to: p(4, 4)); path.addLine(to: p(20, 20))
+        case .sync:
+            path.addArc(center: p(12, 12), radius: 7 * s, startAngle: .degrees(200), endAngle: .degrees(340), clockwise: false)
+            path.move(to: p(18.6, 5.6)); path.addLine(to: p(18.6, 9.6)); path.addLine(to: p(14.8, 9.6))
+            path.move(to: p(12 + 7 * cos(.pi / 9), 12 + 7 * sin(.pi / 9)))
+            path.addArc(center: p(12, 12), radius: 7 * s, startAngle: .degrees(20), endAngle: .degrees(160), clockwise: false)
+            path.move(to: p(5.4, 18.4)); path.addLine(to: p(5.4, 14.4)); path.addLine(to: p(9.2, 14.4))
+        case .trash:
+            path.move(to: p(4.5, 7)); path.addLine(to: p(19.5, 7))
+            path.move(to: p(9.5, 7)); path.addLine(to: p(9.5, 4.5)); path.addLine(to: p(14.5, 4.5)); path.addLine(to: p(14.5, 7))
+            path.move(to: p(6.5, 7)); path.addLine(to: p(7.5, 20)); path.addLine(to: p(16.5, 20)); path.addLine(to: p(17.5, 7))
+            path.move(to: p(10.5, 11)); path.addLine(to: p(10.5, 16)); path.move(to: p(13.5, 11)); path.addLine(to: p(13.5, 16))
         }
         return path
     }

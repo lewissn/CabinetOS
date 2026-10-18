@@ -1,5 +1,7 @@
+import CabinetDesign
 import SwiftUI
 
+/// What finishing a consignment found still unpacked, grouped by cabinet.
 struct MissingItemsSheet: View {
     let missingItems: [FinishConsignmentResponse.MissingItem]
     let onDismiss: () -> Void
@@ -13,44 +15,45 @@ struct MissingItemsSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                        Text("\(missingItems.count) items have not been packed")
-                            .font(.headline)
-                    }
-                }
+        VStack(spacing: 0) {
+            PaperTopBar(.close, title: "Not everything's packed", onLeading: onDismiss)
+                .screen()
+                .padding(.top, PaperSpace.s)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("\(Format.count(missingItems.count, "panel")) \(missingItems.count == 1 ? "isn't" : "aren't") in a box yet, so the consignment stays open.")
+                        .paperType(.bodyL, numeric: true)
+                        .foregroundStyle(PaperColor.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, PaperSpace.l)
 
-                ForEach(groupedItems, id: \.cabinet) { group in
-                    Section(group.cabinet) {
-                        ForEach(group.items, id: \.stableId) { item in
-                            HStack {
-                                Image(systemName: "xmark.circle")
-                                    .foregroundStyle(.red)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Part \(item.partNumber)")
-                                        .font(.body.weight(.bold))
-                                    Text(item.projectName)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                    ForEach(groupedItems, id: \.cabinet) { group in
+                        VStack(alignment: .leading, spacing: 0) {
+                            PaperSectionHeader(group.cabinet) {
+                                Text("\(group.items.count)").paperType(.footnote, numeric: true).foregroundStyle(PaperColor.tertiary)
+                            }
+                            ForEach(group.items, id: \.stableId) { item in
+                                RowContainer {
+                                    HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
+                                        Circle().fill(Tone.held.color).frame(width: 7, height: 7)
+                                        Code("Part \(item.partNumber)", color: PaperColor.ink, size: 14)
+                                        Spacer(minLength: PaperSpace.m)
+                                        Text(item.projectName).paperType(.footnote).foregroundStyle(PaperColor.secondary).lineLimit(1)
+                                    }
                                 }
                             }
                         }
+                        .section(top: PaperSpace.xxl)
                     }
                 }
+                .screen()
+                .padding(.bottom, PaperSpace.l)
             }
-            .navigationTitle("Missing Items")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Go Back") {
-                        onDismiss()
-                    }
-                }
-            }
+            Button("Keep packing", action: onDismiss)
+                .buttonStyle(.paperPill(.accent, .floor, fullWidth: true))
+                .screen()
+                .padding(.vertical, PaperSpace.l)
         }
+        .paperBackground()
     }
 }

@@ -1,50 +1,37 @@
+import CabinetDesign
 import SwiftUI
 
-struct ManifestListView: View {
-    @StateObject private var viewModel = ManifestListViewModel()
+/// The BJS manifests, as rows on the Packing screen. `Manifest` carries a
+/// name and a consignment count but no panel totals, so rows don't show a
+/// packed bar.
+struct BJSManifestList: View {
+    @ObservedObject var viewModel: ManifestListViewModel
 
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 0) {
+            PaperSectionHeader("Manifests") {
+                if !viewModel.manifests.isEmpty {
+                    Text("\(viewModel.manifests.count)").paperType(.footnote, numeric: true)
+                        .foregroundStyle(PaperColor.tertiary)
+                }
+            }
+
             if viewModel.isLoading && viewModel.manifests.isEmpty {
-                ProgressView("Loading manifests...")
+                LoadingLine("Loading manifests")
             } else if let error = viewModel.errorMessage, viewModel.manifests.isEmpty {
-                ContentUnavailableView {
-                    Label("Failed to Load", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(error)
-                } actions: {
-                    Button("Retry") {
-                        Task { await viewModel.loadManifests() }
-                    }
+                PaperEmptyState("Manifests didn't load", message: error, actionTitle: "Try again") {
+                    Task { await viewModel.loadManifests() }
                 }
             } else if viewModel.manifests.isEmpty {
-                ContentUnavailableView(
-                    "No Manifests",
-                    systemImage: "doc.text",
-                    description: Text("No active BJS manifests found")
-                )
+                PaperEmptyState("No BJS manifests", message: "Active manifests appear here once they're uploaded.")
             } else {
-                List(viewModel.manifests) { manifest in
+                ForEach(viewModel.manifests) { manifest in
                     NavigationLink(value: manifest) {
                         ManifestRow(manifest: manifest)
                     }
-                }
-                .refreshable {
-                    await viewModel.loadManifests()
+                    .buttonStyle(.plain)
                 }
             }
-        }
-        .navigationTitle("BJS Manifests")
-        .navigationDestination(for: Manifest.self) { manifest in
-            ConsignmentListView(
-                viewModel: ConsignmentListViewModel(
-                    manifestId: manifest.id,
-                    manifestName: manifest.name
-                )
-            )
-        }
-        .task {
-            await viewModel.loadManifests()
         }
     }
 }
@@ -53,22 +40,21 @@ struct ManifestRow: View {
     let manifest: Manifest
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(manifest.name)
-                .font(.headline)
-
-            HStack {
-                Label("\(manifest.consignmentCount) consignments", systemImage: "tray.full")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                Text(manifest.createdAt, style: .date)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+        RowContainer(verticalPadding: PaperSpace.l) {
+            HStack(alignment: .center, spacing: PaperSpace.m) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(manifest.name).paperType(.body).foregroundStyle(PaperColor.ink).lineLimit(2)
+                    Text("\(Format.count(manifest.consignmentCount, "consignment")) · \(PaperFormat.relativeDay(manifest.createdAt))")
+                        .paperType(.footnote, numeric: true)
+                        .foregroundStyle(PaperColor.secondary)
+                }
+                Spacer(minLength: PaperSpace.m)
+                if manifest.status == .complete {
+                    StatusText("Complete", tone: .done)
+                }
+                PaperIcon(.chevronRight, size: 14, color: PaperColor.faint)
             }
         }
-        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
     }
 }

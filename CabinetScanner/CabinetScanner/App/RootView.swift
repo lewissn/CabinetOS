@@ -48,6 +48,7 @@ enum AppTab: Int, CaseIterable {
 struct MainTabView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var router: AppRouter
+    @StateObject private var toaster = Toaster()
 
     private var selectedTab: Binding<AppTab> {
         Binding(get: { router.selectedTab }, set: { router.selectedTab = $0 })
@@ -64,6 +65,9 @@ struct MainTabView: View {
                 tabContent(.stock) { StockView() }
                 tabContent(.settings) { SettingsPlaceholderView() }
             }
+            .overlay(alignment: .bottom) {
+                ToastView(message: $toaster.message, autoDismissAfter: .seconds(2.4))
+            }
             // An arriving despatch change, over whatever is on screen. Tapping it
             // goes to the job, which is the only useful thing to do about one.
             .notificationBanner { notification in
@@ -77,6 +81,7 @@ struct MainTabView: View {
             PaperTabBar(AppTab.allCases.map { .init($0, title: $0.title, glyph: $0.glyph) }, selection: selectedTab)
                 .overlay(alignment: .top) { currentMark }
         }
+        .environmentObject(toaster)
         .paperBackground()
         .paperStatusBarBackdrop()
     }

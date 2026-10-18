@@ -43,23 +43,20 @@ final class BoxListViewModel: ObservableObject {
     func createBox(type: Box.BoxType, wrappedBy: String?, deviceId: String) async {
         do {
             var box = try await api.createBox(consignmentId: consignment.id, boxType: type)
-            var earned: Int?
             // Non-panel boxes are packed and closed in one action, so they wrap
-            // here rather than via the slide-to-close screen.
+            // here rather than via the close-box sheet.
             if type.isAutoClose {
                 box = try await api.closeBox(
                     boxId: box.id,
                     wrappedBy: wrappedBy,
                     wrappedByDevice: deviceId
                 )
-                earned = WrapStatsService.shared.recordWrap(boxType: type).points
+                _ = WrapStatsService.shared.recordWrap(boxType: type)
             }
             boxes.append(box)
-            if let earned {
-                toastMessage = "\(type.displayName) #\(box.boxNumber) · +\(earned) pt\(earned == 1 ? "" : "s")"
-            } else {
-                toastMessage = "\(type.displayName) #\(box.boxNumber) created"
-            }
+            toastMessage = type.isAutoClose
+                ? "\(type.label) \(box.boxNumber) added and closed"
+                : "\(type.label) \(box.boxNumber) added"
             HapticService.success()
         } catch {
             errorMessage = error.localizedDescription
@@ -83,7 +80,7 @@ final class BoxListViewModel: ObservableObject {
         do {
             let response = try await api.finishConsignment(consignmentId: consignment.id)
             if response.ok {
-                toastMessage = "Consignment complete!"
+                toastMessage = "Consignment finished"
                 HapticService.success()
                 showFinishSheet = false
                 isComplete = true

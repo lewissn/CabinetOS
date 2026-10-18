@@ -1,3 +1,4 @@
+import CabinetDesign
 import SwiftUI
 
 // MARK: - Manual entry — fallback when label barcodes are too damaged to scan
@@ -144,86 +145,85 @@ struct ManualEntryView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if viewModel.isLoading && viewModel.cabinets.isEmpty {
-                    ProgressView("Loading cabinets…")
-                } else if viewModel.cabinets.isEmpty {
-                    ContentUnavailableView(
-                        "No parts list available",
-                        systemImage: "tray",
-                        description: Text("Open this box once while online so the parts list can be downloaded for offline use.")
-                    )
-                } else {
-                    cabinetList
-                }
-            }
-            .navigationTitle("Add manually")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Done") { dismiss() }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
+            VStack(spacing: 0) {
+                PaperTopBar(.close, title: "Add by hand", onLeading: { dismiss() }) {
                     if viewModel.addedThisSession > 0 {
-                        Text("\(viewModel.addedThisSession) added")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.green)
+                        StatusText("\(viewModel.addedThisSession) added", tone: .done)
                     }
                 }
+                .screen()
+                .padding(.top, PaperSpace.s)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("For a label that won't scan. Parts you pick go through the same checks as scanned ones.")
+                            .paperType(.subhead)
+                            .foregroundStyle(PaperColor.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, PaperSpace.s)
+
+                        if viewModel.isLoading && viewModel.cabinets.isEmpty {
+                            LoadingLine("Loading cabinets").section(top: PaperSpace.xxl)
+                        } else if viewModel.cabinets.isEmpty {
+                            PaperEmptyState("No parts list on this device",
+                                            message: "Open this box once while online so the parts list can be downloaded.",
+                                            actionTitle: "Try again") {
+                                Task { await viewModel.loadCabinets() }
+                            }
+                            .section(top: PaperSpace.xxl)
+                        } else {
+                            cabinetList.section(top: PaperSpace.xxl)
+                        }
+                    }
+                    .screen()
+                    .padding(.bottom, PaperSpace.section)
+                }
+                .refreshable { await viewModel.loadCabinets() }
             }
+            .paperBackground()
+            .toolbar(.hidden, for: .navigationBar)
             .task { await viewModel.loadCabinets() }
-            .refreshable { await viewModel.loadCabinets() }
             .overlay(alignment: .bottom) {
-                ToastView(message: $viewModel.infoMessage)
-                    .padding(.bottom, 24)
+                ToastView(message: $viewModel.infoMessage, glyph: viewModel.infoMessage?.hasPrefix("Nothing") == true ? nil : .check)
             }
         }
     }
 
     private var cabinetList: some View {
-        List {
-            Section {
-                ForEach(viewModel.cabinets) { summary in
-                    NavigationLink {
-                        CabinetPartsView(cabinet: summary, viewModel: viewModel)
-                    } label: {
-                        cabinetRow(summary)
-                    }
+        VStack(alignment: .leading, spacing: 0) {
+            PaperSectionHeader("Cabinets") {
+                Text(viewModel.projectName).paperType(.footnote).foregroundStyle(PaperColor.tertiary).lineLimit(1)
+            }
+            ForEach(viewModel.cabinets) { summary in
+                NavigationLink {
+                    CabinetPartsView(cabinet: summary, viewModel: viewModel)
+                } label: {
+                    cabinetRow(summary)
                 }
-            } header: {
-                Text("Cabinets for \(viewModel.projectName)")
-            } footer: {
-                Text("Use this only when a label can't be scanned. Parts you select here go through the same checks as scanned parts.")
+                .buttonStyle(.plain)
             }
         }
     }
 
     private func cabinetRow(_ s: ScanCacheService.CabinetSummary) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: s.isComplete ? "checkmark.circle.fill" : "square.grid.2x2.fill")
-                .foregroundStyle(s.isComplete ? .green : .blue)
-                .font(.title3)
-                .frame(width: 32)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(s.cabinetName)
-                    .font(.body.weight(.semibold))
-                Text("\(s.packedPartCount) / \(s.totalPartCount) packed"
-                     + (s.isComplete ? " — complete" : ""))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if s.unpackedCount > 0 {
-                Text("\(s.unpackedCount)")
-                    .font(.caption.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(.blue)
-                    .padding(.horizontal, 8).padding(.vertical, 2)
-                    .background(.blue.opacity(0.12))
-                    .clipShape(Capsule())
+        RowContainer(minHeight: 56) {
+            HStack(spacing: PaperSpace.m) {
+                Code(s.cabinetName, color: PaperColor.ink, size: 15)
+                Spacer(minLength: PaperSpace.m)
+                VStack(alignment: .trailing, spacing: 3) {
+                    if s.isComplete {
+                        StatusText("All packed", tone: .done)
+                    } else {
+                        StatusText("\(s.unpackedCount) to pack", tone: s.packedPartCount > 0 ? .progress : .neutral)
+                    }
+                    Text("\(s.packedPartCount) of \(s.totalPartCount) packed")
+                        .paperType(.caption, numeric: true)
+                        .foregroundStyle(PaperColor.tertiary)
+                }
+                PaperIcon(.chevronRight, size: 14, color: PaperColor.faint)
             }
         }
-        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -238,19 +238,22 @@ private struct CabinetPartsView: View {
     @State private var isAdding = false
 
     var body: some View {
-        List {
-            Section {
-                ForEach(parts) { part in
-                    partRow(part)
+        PushedScreen(back: "Cabinets", title: cabinet.cabinetName) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Tap the parts to add. Parts already packed can't be picked.")
+                    .paperType(.subhead)
+                    .foregroundStyle(PaperColor.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, PaperSpace.s)
+                VStack(spacing: 0) {
+                    ForEach(parts) { part in
+                        partRow(part)
+                    }
                 }
-            } header: {
-                Text(cabinet.cabinetName)
-            } footer: {
-                Text("Tap any unpacked part to select it. Already-packed parts are disabled.")
+                .padding(.top, PaperSpace.l)
             }
+            .screen()
         }
-        .navigationTitle(cabinet.cabinetName)
-        .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
             if !selected.isEmpty {
                 addButton
@@ -273,45 +276,29 @@ private struct CabinetPartsView: View {
                 selected.insert(part.panelUid)
             }
         } label: {
-            HStack(spacing: 12) {
-                Image(systemName: checkmarkIcon(isChecked: isChecked, isPacked: part.isPacked))
-                    .font(.title3)
-                    .foregroundStyle(checkmarkColor(isChecked: isChecked, isPacked: part.isPacked))
-                    .frame(width: 28)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Part \(part.partNumber)")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(isSelectable ? .primary : .secondary)
-                    Text(part.dimensionsLabel)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+            RowContainer(minHeight: 56) {
+                HStack(spacing: PaperSpace.m) {
+                    PaperCheck(part.isPacked ? .mutedDone : (isChecked ? .done : .open), size: 24)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Part \(part.partNumber)")
+                            .paperType(.body)
+                            .foregroundStyle(isSelectable ? PaperColor.ink : PaperColor.secondary)
+                        Text(part.dimensionsLabel)
+                            .paperType(.footnote, numeric: true)
+                            .foregroundStyle(PaperColor.tertiary)
+                    }
+                    Spacer(minLength: PaperSpace.m)
                     if isInThisBox {
-                        Text("Already in this box")
-                            .font(.caption)
-                            .foregroundStyle(.green)
+                        StatusText("In this box", tone: .done, style: .caption)
                     } else if isInOtherBox {
-                        Text("Packed in another box")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
+                        StatusText("In another box", tone: .neutral, style: .caption)
                     }
                 }
-                Spacer()
             }
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!isSelectable)
-    }
-
-    private func checkmarkIcon(isChecked: Bool, isPacked: Bool) -> String {
-        if isPacked { return "checkmark.seal.fill" }
-        return isChecked ? "checkmark.circle.fill" : "circle"
-    }
-
-    private func checkmarkColor(isChecked: Bool, isPacked: Bool) -> Color {
-        if isPacked { return .secondary }
-        return isChecked ? .blue : .secondary
+        .accessibilityAddTraits(isChecked ? .isSelected : [])
     }
 
     private var addButton: some View {
@@ -325,23 +312,17 @@ private struct CabinetPartsView: View {
                 isAdding = false
             }
         } label: {
-            HStack {
-                if isAdding { ProgressView().tint(.white) }
-                Text(isAdding
-                     ? "Adding…"
-                     : "Add \(selected.count) part\(selected.count == 1 ? "" : "s") to box")
-                    .font(.headline)
+            if isAdding {
+                ProgressView().tint(PaperColor.onAccent)
+            } else {
+                Text("Add \(Format.count(selected.count, "part")) to the box")
             }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(.blue)
-            .foregroundStyle(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .padding()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.paperPill(.accent, .floor, fullWidth: true))
         .disabled(isAdding)
-        .background(.regularMaterial)
+        .screen()
+        .padding(.vertical, PaperSpace.m)
+        .background(PaperColor.paper.ignoresSafeArea(edges: .bottom))
     }
 
     private func reload() async {

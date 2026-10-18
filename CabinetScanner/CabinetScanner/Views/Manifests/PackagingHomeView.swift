@@ -1,35 +1,69 @@
+import CabinetDesign
 import SwiftUI
 
-// MARK: - Packaging Home (tile-based landing page)
+// MARK: - Packing home
+//
+// The warehouse's own work first: carry on with the last box, then the
+// manifests for the chosen type. BJS and courier manifests sit under one
+// segmented control rather than behind two tiles.
 
 struct PackagingHomeView: View {
     @StateObject private var viewModel = PackagingHomeViewModel()
     @StateObject private var apcVM = APCDeadlineViewModel()
+    @StateObject private var bjs = ManifestListViewModel()
+    @StateObject private var courier = ManualManifestListViewModel()
     @EnvironmentObject var appState: AppState
     @State private var resumeTarget: ResumeTarget?
+    @AppStorage("packing.mode") private var mode: PackagingSection = .bjs
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                header
-                APCDeadlineBannerView(viewModel: apcVM)
-                if let resume = viewModel.resume {
-                    resumeTile(resume)
+            VStack(alignment: .leading, spacing: 0) {
+                ScreenTitle("Packing") {
+                    BarIcon(glyph: .station, label: "Station setup") {
+                        appState.isStationConfigured = false
+                    }
                 }
-                tilesSection
+                stationLine
+
+                if let resume = viewModel.resume {
+                    resumeButton(resume)
+                        .section(top: PaperSpace.xxl)
+                }
+
+                if apcVM.shouldShow {
+                    APCDeadlineBannerView(viewModel: apcVM)
+                        .section(top: PaperSpace.xxl)
+                }
+
+                PaperSegmented([(PackagingSection.bjs, "BJS manifests"), (.courier, "Courier")],
+                               selection: $mode, accessibilityLabel: "Manifest type")
+                    .section(top: PaperSpace.xxl)
+
+                Group {
+                    switch mode {
+                    case .bjs: BJSManifestList(viewModel: bjs)
+                    case .courier: CourierManifestList(viewModel: courier)
+                    }
+                }
+                .section(top: PaperSpace.xxl)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 32)
+            .screen()
+            .padding(.bottom, 120)
         }
-        .background(Color(.systemGroupedBackground))
-        .navigationTitle("Packaging")
-        .navigationDestination(for: PackagingSection.self) { section in
-            switch section {
-            case .bjs:
-                ManifestListView()
-            case .courier:
-                ManualManifestListView()
-            }
+        .paperRootScreen()
+        .navigationDestination(for: Manifest.self) { manifest in
+            ConsignmentListView(
+                viewModel: ConsignmentListViewModel(
+                    manifestId: manifest.id,
+                    manifestName: manifest.name
+                )
+            )
+        }
+        .navigationDestination(for: ManualManifest.self) { manifest in
+            ManualManifestDetailView(
+                viewModel: ManualManifestDetailViewModel(manifest: manifest)
+            )
         }
         .navigationDestination(item: $resumeTarget) { target in
             BoxDetailView(
@@ -40,119 +74,79 @@ struct PackagingHomeView: View {
                 manifestName: target.activity.manifestName
             )
         }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    appState.isStationConfigured = false
-                } label: {
-                    Image(systemName: "gearshape")
-                }
+        .sheet(isPresented: $courier.showCreateSheet) {
+            CreateManualManifestSheet { name, courierName, note in
+                Task { await courier.createManifest(name: name, courier: courierName, note: note) }
             }
+            .paperSheet(detents: [.large])
+        }
+        .overlay(alignment: .bottom) {
+            ToastView(message: $courier.toastMessage)
         }
         .refreshable {
-            await viewModel.refresh()
-            await apcVM.refresh()
+            await refreshAll()
         }
         .task {
-            await viewModel.refresh()
-            await apcVM.refresh()
+            await refreshAll()
             apcVM.startCountdown()
+        }
+        .onAppear {
+            // Coming back from a box: the resume target may have changed.
+            viewModel.refreshResume()
         }
         .onDisappear {
             apcVM.stopCountdown()
         }
     }
 
-    // MARK: - Header
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Packaging")
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-            Text("Choose a manifest type to begin")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.top, 16)
+    private func refreshAll() async {
+        viewModel.refreshResume()
+        async let a: () = apcVM.refresh()
+        async let b: () = bjs.loadManifests()
+        async let c: () = courier.loadManifests()
+        _ = await (a, b, c)
     }
 
-    // MARK: - Resume tile
+    private var stationLine: some View {
+        Text(appState.operatorName.isEmpty
+             ? "\(appState.stationId.prefix(1).uppercased() + appState.stationId.dropFirst()) station"
+             : "\(appState.operatorName) · \(appState.stationId) station")
+            .paperType(.footnote)
+            .foregroundStyle(PaperColor.secondary)
+            .padding(.top, PaperSpace.xxs)
+    }
 
-    @ViewBuilder
-    private func resumeTile(_ activity: RecentBoxActivity) -> some View {
+    // MARK: - Resume: the screen's one primary action
+
+    private func resumeButton(_ activity: RecentBoxActivity) -> some View {
         Button {
             resumeTarget = ResumeTarget(activity: activity)
         } label: {
-            HStack(spacing: 16) {
-                Image(systemName: "play.circle.fill")
-                    .font(.system(size: 30))
-                    .foregroundStyle(.green)
-                    .frame(width: 52, height: 52)
-                    .background(.green.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Resume packing")
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                    Text("Box \(activity.boxNumber) · \(activity.customerName)")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            HStack(spacing: PaperSpace.l) {
+                PaperIcon(.scan, size: 26, color: PaperColor.onAccent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Resume packing").paperType(.headline).foregroundStyle(PaperColor.onAccent)
+                    Text("\(activity.customerName) · \(activity.boxType.label.lowercased()) \(activity.boxNumber)")
+                        .paperType(.footnote, numeric: true)
+                        .foregroundStyle(PaperColor.onAccent.opacity(0.75))
                         .lineLimit(1)
                 }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                Spacer(minLength: PaperSpace.s)
+                PaperIcon(.arrowRight, size: 18, color: PaperColor.onAccent)
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(.green.opacity(0.35), lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
+            .padding(.horizontal, PaperSpace.xxl)
+            .frame(minHeight: 72)
+            .background(PaperColor.accent, in: Capsule())
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-    }
-
-    // MARK: - Tiles
-
-    private var tilesSection: some View {
-        VStack(spacing: 16) {
-            NavigationLink(value: PackagingSection.bjs) {
-                PackagingTile(
-                    icon: "doc.text.fill",
-                    iconColor: .blue,
-                    title: "BJS Manifests",
-                    subtitle: viewModel.bjsSummary,
-                    accentColor: .blue,
-                    isLoading: viewModel.isLoading
-                )
-            }
-            .buttonStyle(.plain)
-
-            NavigationLink(value: PackagingSection.courier) {
-                PackagingTile(
-                    icon: "truck.box.fill",
-                    iconColor: .orange,
-                    title: "Courier Manifests",
-                    subtitle: viewModel.courierSummary,
-                    accentColor: .orange,
-                    isLoading: viewModel.isLoading
-                )
-            }
-            .buttonStyle(.plain)
-        }
+        .accessibilityLabel("Resume packing, \(activity.customerName), box \(activity.boxNumber)")
     }
 }
 
 // MARK: - Navigation enum
 
-enum PackagingSection: Hashable {
+enum PackagingSection: String, Hashable {
     case bjs
     case courier
 }
@@ -191,108 +185,20 @@ struct ResumeTarget: Hashable, Identifiable {
     }
 }
 
-// MARK: - Tile Component (Apple Fitness style)
-
-private struct PackagingTile: View {
-    let icon: String
-    let iconColor: Color
-    let title: String
-    let subtitle: String
-    let accentColor: Color
-    let isLoading: Bool
-
-    var body: some View {
-        HStack(spacing: 16) {
-            Image(systemName: icon)
-                .font(.system(size: 28))
-                .foregroundStyle(iconColor)
-                .frame(width: 52, height: 52)
-                .background(iconColor.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-
-                if isLoading {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(.quaternary)
-                        .frame(width: 120, height: 14)
-                } else {
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.tertiary)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
-    }
-}
-
 // MARK: - ViewModel
 
 @MainActor
 final class PackagingHomeViewModel: ObservableObject {
-    @Published var bjsCount: Int = 0
-    @Published var courierOpenCount: Int = 0
-    @Published var courierFinishedCount: Int = 0
-    @Published var isLoading = false
-    @Published var errorMessage: String?
     @Published var resume: RecentBoxActivity?
 
-    private let api: APIServiceProtocol = ServiceContainer.shared.api
-    private let manualService = ManualManifestService()
-
-    var bjsSummary: String {
-        if bjsCount == 0 { return "No active manifests" }
-        return "\(bjsCount) active manifest\(bjsCount == 1 ? "" : "s")"
-    }
-
-    var courierSummary: String {
-        let total = courierOpenCount + courierFinishedCount
-        if total == 0 { return "No manifests" }
-        var parts: [String] = []
-        if courierOpenCount > 0 { parts.append("\(courierOpenCount) open") }
-        if courierFinishedCount > 0 { parts.append("\(courierFinishedCount) finished") }
-        return parts.joined(separator: " · ")
-    }
-
-    func refresh() async {
-        isLoading = true
-        errorMessage = nil
-
-        // Read the resume target synchronously from UserDefaults — instant.
-        // Hide it after 24 hours of inactivity (probably a finished session).
+    /// Read the resume target from UserDefaults — instant. Hide it after 24
+    /// hours of inactivity (probably a finished session).
+    func refreshResume() {
         if let activity = RecentActivityService.current(),
            Date().timeIntervalSince(activity.openedAt) < 24 * 60 * 60 {
             resume = activity
         } else {
             resume = nil
         }
-
-        do {
-            async let bjsTask = api.fetchManifests()
-            async let manualTask = manualService.fetchManifests()
-
-            let bjs = try await bjsTask
-            let manual = try await manualTask
-
-            bjsCount = bjs.filter { $0.status == .active }.count
-            courierOpenCount = manual.filter { !$0.isFinished }.count
-            courierFinishedCount = manual.filter { $0.isFinished }.count
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-        isLoading = false
     }
 }

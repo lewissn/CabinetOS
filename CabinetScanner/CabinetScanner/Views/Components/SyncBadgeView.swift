@@ -1,60 +1,43 @@
+import CabinetDesign
 import SwiftUI
 
 /// Compact badge showing pending/conflict counts and offline state.
-/// Designed to live in the BoxDetailView toolbar or header.
+/// Lives in the box screen's top bar: quiet glyphs with a count.
 struct SyncBadgeView: View {
     let pendingCount: Int
     let conflictCount: Int
     let isOnline: Bool
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: PaperSpace.s) {
             if !isOnline {
-                Image(systemName: "wifi.slash")
-                    .foregroundStyle(.orange)
+                PaperIcon(.offline, size: 18, color: PaperColor.warning)
+                    .accessibilityLabel("Offline")
             }
             if pendingCount > 0 {
-                HStack(spacing: 4) {
-                    ProgressView().controlSize(.mini)
-                    Text("\(pendingCount)")
-                        .font(.caption.weight(.semibold))
-                        .monospacedDigit()
+                HStack(spacing: 3) {
+                    PaperIcon(.sync, size: 16, color: PaperColor.secondary)
+                    Text("\(pendingCount)").paperType(.footnote, numeric: true).foregroundStyle(PaperColor.secondary)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(.blue.opacity(0.15))
-                .clipShape(Capsule())
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(pendingCount) waiting to sync")
             }
             if conflictCount > 0 {
                 HStack(spacing: 4) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                    Text("\(conflictCount)")
-                        .font(.caption.weight(.semibold))
-                        .monospacedDigit()
+                    Circle().fill(PaperColor.danger).frame(width: 7, height: 7)
+                    Text("\(conflictCount)").paperType(.footnote, numeric: true).foregroundStyle(PaperColor.danger)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(.red.opacity(0.12))
-                .clipShape(Capsule())
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(conflictCount) need checking")
             }
         }
     }
 }
 
-/// A persistent banner shown above the scan button when offline.
+/// Shown above the scan button when offline.
 struct OfflineBannerView: View {
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "wifi.slash")
-            Text("Offline — scans will sync when connection returns")
-                .font(.footnote.weight(.medium))
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity)
-        .background(.orange.opacity(0.18))
-        .foregroundStyle(.orange)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        Notice(text: "Offline. Scans are kept on this device and sync when the connection's back.",
+               tone: .soon, glyph: .offline)
     }
 }

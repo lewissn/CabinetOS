@@ -1,80 +1,50 @@
+import CabinetDesign
 import SwiftUI
 
-struct ManualManifestListView: View {
-    @StateObject private var viewModel = ManualManifestListViewModel()
+/// Courier manifests, as rows on the Packing screen. These are read and
+/// written straight to Supabase by ManualManifestService, as before.
+struct CourierManifestList: View {
+    @ObservedObject var viewModel: ManualManifestListViewModel
 
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 0) {
             if viewModel.isLoading && viewModel.manifests.isEmpty {
-                ProgressView("Loading manifests...")
+                header("Courier manifests")
+                LoadingLine("Loading manifests")
             } else if let error = viewModel.errorMessage, viewModel.manifests.isEmpty {
-                ContentUnavailableView {
-                    Label("Failed to Load", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(error)
-                } actions: {
-                    Button("Retry") {
-                        Task { await viewModel.loadManifests() }
-                    }
+                header("Courier manifests")
+                PaperEmptyState("Manifests didn't load", message: error, actionTitle: "Try again") {
+                    Task { await viewModel.loadManifests() }
                 }
             } else if viewModel.manifests.isEmpty {
-                ContentUnavailableView(
-                    "No Courier Manifests",
-                    systemImage: "truck.box",
-                    description: Text("Tap + to create a manual manifest")
-                )
+                header("Courier manifests")
+                PaperEmptyState("No courier manifests", message: "Start one for an APC or ParcelForce consignment.",
+                                actionTitle: "New manifest") { viewModel.showCreateSheet = true }
             } else {
-                List {
-                    if !viewModel.openManifests.isEmpty {
-                        Section("Open") {
-                            ForEach(viewModel.openManifests) { manifest in
-                                NavigationLink(value: manifest) {
-                                    ManualManifestRow(manifest: manifest)
-                                }
-                            }
-                        }
+                if !viewModel.openManifests.isEmpty {
+                    header("Open")
+                    ForEach(viewModel.openManifests) { manifest in
+                        NavigationLink(value: manifest) { ManualManifestRow(manifest: manifest) }
+                            .buttonStyle(.plain)
                     }
+                }
+                if !viewModel.finishedManifests.isEmpty {
+                    PaperSectionHeader("Finished")
+                        .padding(.top, viewModel.openManifests.isEmpty ? 0 : PaperSpace.section)
+                    ForEach(viewModel.finishedManifests) { manifest in
+                        NavigationLink(value: manifest) { ManualManifestRow(manifest: manifest) }
+                            .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
 
-                    if !viewModel.finishedManifests.isEmpty {
-                        Section("Finished") {
-                            ForEach(viewModel.finishedManifests) { manifest in
-                                NavigationLink(value: manifest) {
-                                    ManualManifestRow(manifest: manifest)
-                                }
-                            }
-                        }
-                    }
-                }
-                .refreshable {
-                    await viewModel.loadManifests()
-                }
-            }
-        }
-        .navigationTitle("Courier Manifests")
-        .navigationDestination(for: ManualManifest.self) { manifest in
-            ManualManifestDetailView(
-                viewModel: ManualManifestDetailViewModel(manifest: manifest)
-            )
-        }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    viewModel.showCreateSheet = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-            }
-        }
-        .sheet(isPresented: $viewModel.showCreateSheet) {
-            CreateManualManifestSheet { name, courier, note in
-                Task { await viewModel.createManifest(name: name, courier: courier, note: note) }
-            }
-        }
-        .overlay(alignment: .bottom) {
-            ToastView(message: $viewModel.toastMessage)
-        }
-        .task {
-            await viewModel.loadManifests()
+    private func header(_ title: String) -> some View {
+        PaperSectionHeader(title) {
+            Button("New") { viewModel.showCreateSheet = true }
+                .buttonStyle(.paperText(PaperColor.ink, .footnote, weight: .semibold))
+                .accessibilityLabel("New courier manifest")
         }
     }
 }
@@ -123,42 +93,27 @@ final class ManualManifestListViewModel: ObservableObject {
 struct ManualManifestRow: View {
     let manifest: ManualManifest
 
+    private var detail: String {
+        var parts: [String] = []
+        if let courier = manifest.courier, !courier.isEmpty { parts.append(courier) }
+        if let ref = manifest.jobReference, !ref.isEmpty { parts.append(ref) }
+        parts.append(PaperFormat.relativeDay(manifest.createdAt))
+        return parts.joined(separator: " · ")
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text(manifest.manifestName)
-                    .font(.headline)
-
-                if let courier = manifest.courier, !courier.isEmpty {
-                    Text(courier)
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.blue.opacity(0.15))
-                        .foregroundStyle(.blue)
-                        .clipShape(Capsule())
+        RowContainer(verticalPadding: PaperSpace.l) {
+            HStack(alignment: .center, spacing: PaperSpace.m) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(manifest.manifestName).paperType(.body).foregroundStyle(PaperColor.ink).lineLimit(2)
+                    Text(detail).paperType(.footnote, numeric: true).foregroundStyle(PaperColor.secondary).lineLimit(1)
                 }
-            }
-
-            HStack {
-                if manifest.isFinished {
-                    Label("Finished", systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.green)
-                } else {
-                    Label("Open", systemImage: "circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Text(manifest.createdAt, style: .date)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                Spacer(minLength: PaperSpace.m)
+                StatusText(manifest.isFinished ? "Finished" : "Open", tone: manifest.isFinished ? .done : .progress)
+                PaperIcon(.chevronRight, size: 14, color: PaperColor.faint)
             }
         }
-        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -172,47 +127,44 @@ struct CreateManualManifestSheet: View {
     @State private var selectedCourier = ""
     @State private var note = ""
 
-    private let courierOptions = ["", "APC", "ParcelForce", "Other"]
+    private let courierOptions = ["APC", "ParcelForce", "Other"]
+
+    private var canCreate: Bool { !manifestName.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("Manifest") {
-                    TextField("Manifest Name", text: $manifestName)
-                        .textInputAutocapitalization(.words)
-                }
+        SheetScreen("New courier manifest") {
+            VStack(alignment: .leading, spacing: PaperSpace.xxl) {
+                PaperUnderlineField("Manifest name", text: $manifestName, placeholder: "Customer or job")
+                    .textInputAutocapitalization(.words)
+                    .padding(.top, PaperSpace.l)
 
-                Section("Courier (optional)") {
-                    Picker("Courier", selection: $selectedCourier) {
-                        Text("None").tag("")
-                        ForEach(courierOptions.filter { !$0.isEmpty }, id: \.self) { option in
-                            Text(option).tag(option)
-                        }
+                VStack(alignment: .leading, spacing: PaperSpace.s) {
+                    PaperLabel("Courier (optional)")
+                    PaperChips(courierOptions, label: { $0 }, isSelected: { $0 == selectedCourier }) { option in
+                        selectedCourier = selectedCourier == option ? "" : option
                     }
-                    .pickerStyle(.menu)
                 }
 
-                Section("Notes (optional)") {
-                    TextField("Any additional notes", text: $note, axis: .vertical)
+                VStack(alignment: .leading, spacing: PaperSpace.xs) {
+                    PaperLabel("Notes (optional)")
+                    TextField("Anything the next person should know", text: $note, axis: .vertical)
+                        .paperType(.body)
+                        .foregroundStyle(PaperColor.ink)
                         .lineLimit(3...6)
+                        .padding(.bottom, PaperSpace.xs)
+                        .overlay(alignment: .bottom) { Rectangle().fill(PaperColor.dot).frame(height: 1) }
+                        .accessibilityLabel("Notes")
                 }
-            }
-            .navigationTitle("New Courier Manifest")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+
+                Button("Create manifest") {
+                    let courier = selectedCourier.isEmpty ? nil : selectedCourier
+                    let noteVal = note.trimmingCharacters(in: .whitespaces).isEmpty ? nil : note
+                    onCreate(manifestName, courier, noteVal)
+                    dismiss()
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
-                        let courier = selectedCourier.isEmpty ? nil : selectedCourier
-                        let noteVal = note.trimmingCharacters(in: .whitespaces).isEmpty ? nil : note
-                        onCreate(manifestName, courier, noteVal)
-                        dismiss()
-                    }
-                    .fontWeight(.semibold)
-                    .disabled(manifestName.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
+                .buttonStyle(.paperPill(.accent, .large, fullWidth: true))
+                .disabled(!canCreate)
+                .padding(.top, PaperSpace.s)
             }
         }
     }

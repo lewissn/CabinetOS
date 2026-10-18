@@ -1,40 +1,49 @@
+import CabinetDesign
 import SwiftUI
 
+/// A manifest's consignments, each with what's packed of what's expected.
 struct ConsignmentListView: View {
     @ObservedObject var viewModel: ConsignmentListViewModel
 
+    private var packed: Int { viewModel.consignments.reduce(0) { $0 + $1.packedItemCount } }
+    private var expected: Int { viewModel.consignments.reduce(0) { $0 + $1.expectedItemCount } }
+    private var complete: Int { viewModel.consignments.filter { $0.status == .complete }.count }
+
     var body: some View {
-        Group {
-            if viewModel.isLoading && viewModel.consignments.isEmpty {
-                ProgressView("Loading consignments...")
-            } else if let error = viewModel.errorMessage, viewModel.consignments.isEmpty {
-                ContentUnavailableView {
-                    Label("Failed to Load", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(error)
-                } actions: {
-                    Button("Retry") {
+        PushedScreen(back: "Packing", onRefresh: { await viewModel.loadConsignments() }) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(viewModel.manifestName)
+                    .paperType(.largeTitle)
+                    .foregroundStyle(PaperColor.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+
+                if viewModel.isLoading && viewModel.consignments.isEmpty {
+                    LoadingLine("Loading consignments").section(top: PaperSpace.xxl)
+                } else if let error = viewModel.errorMessage, viewModel.consignments.isEmpty {
+                    PaperEmptyState("Consignments didn't load", message: error, actionTitle: "Try again") {
                         Task { await viewModel.loadConsignments() }
                     }
-                }
-            } else if viewModel.consignments.isEmpty {
-                ContentUnavailableView(
-                    "No Consignments",
-                    systemImage: "tray",
-                    description: Text("No consignments in this manifest")
-                )
-            } else {
-                List(viewModel.consignments) { consignment in
-                    NavigationLink(value: consignment) {
-                        ConsignmentRow(consignment: consignment)
+                    .section(top: PaperSpace.xxl)
+                } else if viewModel.consignments.isEmpty {
+                    PaperEmptyState("No consignments", message: "This manifest has no consignments.")
+                        .section(top: PaperSpace.xxl)
+                } else {
+                    summary.section(top: PaperSpace.xxl)
+                    VStack(alignment: .leading, spacing: 0) {
+                        PaperSectionHeader("Consignments")
+                        ForEach(viewModel.consignments) { consignment in
+                            NavigationLink(value: consignment) {
+                                ConsignmentRow(consignment: consignment)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                }
-                .refreshable {
-                    await viewModel.loadConsignments()
+                    .section()
                 }
             }
+            .screen()
         }
-        .navigationTitle(viewModel.manifestName)
         .navigationDestination(for: Consignment.self) { consignment in
             BoxListView(
                 consignment: consignment,
@@ -46,48 +55,39 @@ struct ConsignmentListView: View {
             await viewModel.loadConsignments()
         }
     }
+
+    private var summary: some View {
+        VStack(alignment: .leading, spacing: PaperSpace.l) {
+            Headline(value: PaperFormat.int(packed), unit: "of \(PaperFormat.int(expected)) panels packed",
+                     detail: "\(Format.count(viewModel.consignments.count, "consignment")) · \(complete) complete")
+            if expected > 0 {
+                PaperBar(Double(packed) / Double(expected),
+                         color: packed >= expected ? PaperColor.success : PaperColor.accent, height: 4)
+            }
+        }
+    }
 }
 
 struct ConsignmentRow: View {
     let consignment: Consignment
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(consignment.displayTitle)
-                    .font(.headline)
-
-                HStack(spacing: 4) {
-                    Text("\(consignment.packedItemCount)")
-                        .fontWeight(.semibold)
-                    Text("/")
-                        .foregroundStyle(.secondary)
-                    Text("\(consignment.expectedItemCount)")
-                        .foregroundStyle(.secondary)
-                    Text("packed")
-                        .foregroundStyle(.secondary)
+        RowContainer {
+            HStack(alignment: .center, spacing: PaperSpace.m) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(consignment.title).paperType(.body).foregroundStyle(PaperColor.ink).lineLimit(1)
+                    if let ref = consignment.jobRef {
+                        Code(ref)
+                    }
                 }
-                .font(.subheadline)
+                Spacer(minLength: PaperSpace.m)
+                VStack(alignment: .trailing, spacing: 3) {
+                    StatusText(consignment.statusLabel, tone: consignment.tone)
+                    Text(consignment.packedLine).paperType(.caption, numeric: true).foregroundStyle(PaperColor.tertiary)
+                }
+                PaperIcon(.chevronRight, size: 14, color: PaperColor.faint)
             }
-
-            Spacer()
-
-            StatusBadge(status: consignment.status)
         }
-        .padding(.vertical, 4)
-    }
-}
-
-struct StatusBadge: View {
-    let status: Consignment.ConsignmentStatus
-
-    var body: some View {
-        Text(status == .complete ? "Complete" : "Open")
-            .font(.caption.weight(.bold))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(status == .complete ? Color.green.opacity(0.15) : Color.blue.opacity(0.15))
-            .foregroundStyle(status == .complete ? .green : .blue)
-            .clipShape(Capsule())
+        .accessibilityElement(children: .combine)
     }
 }
