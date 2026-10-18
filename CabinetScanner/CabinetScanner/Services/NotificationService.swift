@@ -92,12 +92,13 @@ final class NotificationService: ObservableObject {
         unreadCount = feed.unreadCount
         seenIds = Set(feed.notifications.map(\.id))
 
-        // Toast only what arrived while this app was open and running, and
-        // only the most pressing of a batch — several at once is a banner
-        // queue nobody reads.
+        // Toast only what arrived while this app was open and running, only
+        // a date brought forward (ShopVOX moves due dates all day; the rest
+        // wait behind the bell), and only the most pressing of a batch —
+        // several at once is a banner queue nobody reads.
         if hasCompletedFirstLoad {
             let worthShowing = arriving
-                .filter { !$0.read }
+                .filter { !$0.read && $0.isUrgent }
                 .sorted { a, b in
                     if a.isUrgent != b.isUrgent { return a.isUrgent }
                     return a.detectedAt > b.detectedAt

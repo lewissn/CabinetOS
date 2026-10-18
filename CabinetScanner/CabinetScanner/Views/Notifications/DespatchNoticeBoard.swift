@@ -16,30 +16,76 @@ struct DespatchNoticeBoard: View {
 
     private let maximumShown = 3
 
-    private var shown: [AppNotification] {
-        Array(service.noticeBoard.prefix(maximumShown))
+    /// Only dates brought forward are put in front of the bench. ShopVOX moves
+    /// due dates constantly; a postponement or a date first set can wait in
+    /// the full list behind the bell.
+    private var urgent: [AppNotification] {
+        service.noticeBoard.filter(\.isUrgent)
     }
 
+    private var shown: [AppNotification] { Array(urgent.prefix(maximumShown)) }
+
+    /// Unread changes that aren't urgent, summed into one line.
+    private var quietCount: Int { service.unreadCount - urgent.count }
+
     var body: some View {
-        if !shown.isEmpty {
+        if !shown.isEmpty || quietCount > 0 {
             VStack(alignment: .leading, spacing: 0) {
                 PaperSectionHeader("Alerts") {
-                    Button("See all") { showingAll = true }
-                        .buttonStyle(.paperText(PaperColor.secondary, .footnote))
+                    HStack(spacing: PaperSpace.l) {
+                        Button("Clear") { Task { await service.markAllRead() } }
+                            .buttonStyle(.paperText(PaperColor.secondary, .footnote))
+                            .accessibilityLabel("Mark every despatch alert read")
+                        Button("See all") { showingAll = true }
+                            .buttonStyle(.paperText(PaperColor.secondary, .footnote))
+                    }
                 }
 
                 ForEach(shown) { notification in
-                    Button { showingAll = true } label: {
-                        AlertRow(notification: notification)
+                    HStack(alignment: .top, spacing: 0) {
+                        Button { showingAll = true } label: {
+                            AlertRow(notification: notification)
+                        }
+                        .buttonStyle(.plain)
+                        // Read, so it leaves Today; still in the full list.
+                        Button {
+                            Task { await service.markRead(notification) }
+                        } label: {
+                            PaperIcon(.close, size: 12, lineWidth: 2, color: PaperColor.secondary)
+                        }
+                        .buttonStyle(.paperIcon)
+                        .padding(.top, PaperSpace.xs)
+                        .accessibilityLabel("Dismiss \(notification.shortTitle)")
+                    }
+                    .transition(.opacity)
+                }
+
+                if urgent.count > shown.count {
+                    Button("\(urgent.count - shown.count) more brought forward") { showingAll = true }
+                        .buttonStyle(.paperText(PaperColor.secondary, .footnote))
+                }
+
+                if quietCount > 0 {
+                    Button {
+                        showingAll = true
+                    } label: {
+                        HStack(spacing: PaperSpace.s) {
+                            Circle().fill(Tone.neutral.color).frame(width: 7, height: 7)
+                            Text(shown.isEmpty
+                                 ? "\(Format.count(quietCount, "date change")), none brought forward"
+                                 : "\(Format.count(quietCount, "other date change"))")
+                                .paperType(.subhead, numeric: true)
+                                .foregroundStyle(PaperColor.secondary)
+                            Spacer(minLength: 0)
+                            PaperIcon(.chevronRight, size: 14, color: PaperColor.faint)
+                        }
+                        .frame(minHeight: PaperSpace.tap)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
-
-                if service.unreadCount > shown.count {
-                    Button("\(service.unreadCount - shown.count) more") { showingAll = true }
-                        .buttonStyle(.paperText(PaperColor.secondary, .footnote))
-                }
             }
+            .animation(PaperMotion.fade, value: shown.map(\.id))
         }
     }
 }

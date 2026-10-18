@@ -96,6 +96,8 @@ struct JobRowContent: View {
     let subtitle: String?
     let due: (text: String, tone: Tone)?
     let detail: String?
+    /// The shipping method, as a small outlined tag.
+    var tag: String? = nil
     let source: JobDataSource
     let isStale: Bool
 
@@ -117,6 +119,16 @@ struct JobRowContent: View {
                     }
                 }
                 HStack(spacing: PaperSpace.m) {
+                    if let tag, !tag.isEmpty {
+                        Text(tag)
+                            .paperType(.caption)
+                            .foregroundStyle(PaperColor.body)
+                            .lineLimit(1)
+                            .padding(.horizontal, PaperSpace.s)
+                            .padding(.vertical, 2)
+                            .overlay(Capsule().strokeBorder(PaperColor.border, lineWidth: 1))
+                            .layoutPriority(1)
+                    }
                     if let detail {
                         Text(detail).paperType(.caption).foregroundStyle(PaperColor.secondary).lineLimit(1)
                             .layoutPriority(-1)

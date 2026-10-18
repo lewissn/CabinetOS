@@ -13,6 +13,20 @@ import SwiftUI
 
 struct ProductionBoard: View {
     @ObservedObject var viewModel: ProductionViewsViewModel
+    /// Shipping method to show, or nil for all. Kept per device.
+    @AppStorage("board.shippingFilter") private var shippingFilter = ""
+
+    /// The shipping methods in this view, most jobs first.
+    private var methods: [(name: String, count: Int)] {
+        Dictionary(grouping: viewModel.jobs, by: { $0.shippingLabel })
+            .map { ($0.key, $0.value.count) }
+            .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0 < $1.0 }
+    }
+
+    private var shownJobs: [ProductionJob] {
+        guard !shippingFilter.isEmpty, methods.contains(where: { $0.name == shippingFilter }) else { return viewModel.jobs }
+        return viewModel.jobs.filter { $0.shippingLabel == shippingFilter }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -71,12 +85,15 @@ struct ProductionBoard: View {
 
     private var jobList: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PaperSectionHeader(Format.count(viewModel.jobs.count, "order")) {
+            if methods.count > 1 {
+                shippingChips.padding(.bottom, PaperSpace.l)
+            }
+            PaperSectionHeader(Format.count(shownJobs.count, "order")) {
                 if let basis = viewModel.response?.dateBasisLabel {
                     Text(basis).paperType(.footnote).foregroundStyle(PaperColor.tertiary).lineLimit(1)
                 }
             }
-            ForEach(viewModel.jobs) { job in
+            ForEach(shownJobs) { job in
                 NavigationLink(value: job) {
                     ProductionJobRow(job: job)
                 }
@@ -95,23 +112,55 @@ struct ProductionBoard: View {
     }
 }
 
+// MARK: - Shipping filter
+
+extension ProductionBoard {
+    /// "All" and one chip per shipping method in this view, with its count.
+    /// A method that isn't in the view just shows everything.
+    fileprivate var shippingChips: some View {
+        let active = methods.contains(where: { $0.name == shippingFilter }) ? shippingFilter : ""
+        return VStack(alignment: .leading, spacing: PaperSpace.xs) {
+            PaperLabel("Shipping")
+            PaperFlowLayout(spacing: PaperSpace.s) {
+                Button("All \(viewModel.jobs.count)") { shippingFilter = "" }
+                    .buttonStyle(.paperChip(selected: active.isEmpty))
+                ForEach(methods, id: \.name) { method in
+                    Button("\(method.name) \(method.count)") {
+                        shippingFilter = active == method.name ? "" : method.name
+                    }
+                    .buttonStyle(.paperChip(selected: active == method.name))
+                    .accessibilityLabel("\(method.name), \(method.count) orders")
+                }
+            }
+        }
+    }
+}
+
+extension ProductionJob {
+    /// The shipping method as shown and filtered on; jobs without one group
+    /// under "Not set" rather than vanishing from the filter.
+    var shippingLabel: String {
+        let m = shippingMethod?.trimmingCharacters(in: .whitespaces) ?? ""
+        return m.isEmpty ? "Not set" : m
+    }
+}
+
 // MARK: - Row
 
 struct ProductionJobRow: View {
     let job: ProductionJob
-
-    private var detail: String? {
-        let parts = [job.currentStep.map { "At \($0)" }, job.shippingMethod].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
 
     var body: some View {
         JobRowContent(
             title: job.displayTitle,
             reference: job.primaryReference,
             subtitle: job.jobTitle.flatMap { $0 == job.displayTitle ? nil : $0 },
-            due: DueLine.make(isoDate: job.orderDueDate, isOverdue: job.isOverdue),
-            detail: detail,
+            // A despatched job says so, rather than showing its due date.
+            due: job.isComplete == true
+                ? ("Despatched", .done)
+                : DueLine.make(isoDate: job.orderDueDate, isOverdue: job.isOverdue),
+            detail: job.isComplete == true ? nil : job.currentStep.map { "At \($0)" },
+            tag: job.shippingMethod,
             source: job.dataSource,
             isStale: job.isStale
         )

@@ -6,6 +6,7 @@ enum ReportingPeriod: String, CaseIterable, Identifiable {
     case today = "Today"
     case thisWeek = "This Week"
     case thisMonth = "This Month"
+    case allTime = "All Time"
 
     var id: String { rawValue }
 
@@ -27,13 +28,24 @@ enum ReportingPeriod: String, CaseIterable, Identifiable {
             let monthStart = cal.date(from: cal.dateComponents([.year, .month], from: now))!
             let monthEnd = cal.date(byAdding: .month, value: 1, to: monthStart)!
             return (monthStart, monthEnd)
+        case .allTime:
+            // Before the first scan (26 Feb 2026); per-day figures count from
+            // the first day with data, not from here. See ReportingService.
+            let start = cal.date(from: DateComponents(year: 2020, month: 1, day: 1))!
+            let end = cal.date(byAdding: .day, value: 1, to: todayStart)!
+            return (start, end)
         }
     }
 
     /// Number of working days in the period (for "per day" calculations).
     var workingDays: Int {
-        let cal = Calendar.london
         let (start, end) = dateRange()
+        return Self.workingDays(from: start, to: end)
+    }
+
+    /// Weekdays from `start` up to `end` or today, whichever is earlier.
+    static func workingDays(from start: Date, to end: Date) -> Int {
+        let cal = Calendar.london
         var count = 0
         var date = start
         while date < end && date <= Date() {
