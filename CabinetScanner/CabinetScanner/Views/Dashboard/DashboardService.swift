@@ -237,6 +237,10 @@ final class DashboardService {
     private static let isoDateFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withFullDate]
+        // London, not the default UTC. In summer time London's midnight is
+        // 23:00 UTC the day before, so the query asked for yesterday and
+        // today and never fetched tomorrow's jobs.
+        f.timeZone = TimeZone(identifier: "Europe/London")
         return f
     }()
 }

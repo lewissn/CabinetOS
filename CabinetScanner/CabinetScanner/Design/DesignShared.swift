@@ -461,6 +461,37 @@ extension View {
     }
 }
 
+/// Reloads a tab whose figures depend on the date. Every tab stays alive, so
+/// without this an iPad left on Today on Sunday still showed Sunday's
+/// "tomorrow" (Monday) on Monday morning.
+private struct ResumeModifier: ViewModifier {
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.isTabActive) private var isActive
+    let action: () async -> Void
+
+    func body(content: Content) -> some View {
+        content
+            // Back from the background. Not from .inactive alone: pulling
+            // down Control Center passes through that.
+            .onChange(of: scenePhase) { old, new in
+                if isActive, old == .background, new == .active { Task { await action() } }
+            }
+            // Midnight, a clock change or a time zone change, while open.
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+                if isActive { Task { await action() } }
+            }
+    }
+}
+
+extension View {
+    /// Runs `action` when the app comes back to the foreground or the day
+    /// changes, while this view's tab is current. A tab that isn't current
+    /// reloads when it's returned to instead (see `onTabReturn`).
+    func onResume(_ action: @escaping () async -> Void) -> some View {
+        modifier(ResumeModifier(action: action))
+    }
+}
+
 // MARK: - App-wide toast
 //
 // For a confirmation that should outlive the screen that caused it, such as

@@ -90,6 +90,7 @@ struct DashboardView: View {
                     apcVM.stopCountdown()
                 }
             }
+            .onResume { await refreshAll() }
             .onChange(of: vm.state) { _, state in
                 if state == .loaded { hasLoaded = true }
             }

@@ -108,6 +108,9 @@ struct JobsHubView: View {
             openPendingJob()
             if !isSearching { await board.load() }
         }
+        .onResume {
+            if !isSearching { await board.load() }
+        }
     }
 
     /// Open what a scanned job label points at, replacing the stack as a

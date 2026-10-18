@@ -57,6 +57,7 @@ struct ReportingView: View {
         }
         // Every tab is alive from launch; coming back is when it refreshes.
         .onTabReturn { await vm.refreshIfStale() }
+        .onResume { await vm.refreshIfStale() }
     }
 
     // MARK: - Consignments finished: the headline
