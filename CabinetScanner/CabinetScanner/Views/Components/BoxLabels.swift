@@ -4,7 +4,7 @@ import SwiftUI
 // MARK: - 4×6" box labels
 //
 // Printed on a direct-thermal printer: black only, no greys that dither into
-// noise, heavy rules, and the things a driver and a packer look for read from
+// noise and no large solid fills (they print faded), heavy rules, and the things a driver and a packer look for read from
 // arm's length — who it's for, which box, how it's going.
 //
 // Drawn at 288 × 432 pt (4 × 6 in at 72 pt). Fixed type sizes: a label must
@@ -78,24 +78,25 @@ struct BoxLabel: View {
 
             Spacer(minLength: 10)
 
-            // What's inside, reversed out so it reads across a bay.
+            // What's inside, in a heavy outline. Black text on white rather
+            // than reversed out: thermal heads fade large solid areas, and
+            // white type in a faded box is the first thing to go unreadable.
             VStack(alignment: .leading, spacing: 2) {
                 Text(boxKind.uppercased())
-                    .font(.brandFixed(17, .semibold))
+                    .font(.brandFixed(19, .semibold))
                     .tracking(1)
                 if let contents, !contents.isEmpty {
                     Text(contents)
-                        .font(.brandFixed(14, .medium))
+                        .font(.brandFixed(15, .semibold))
                         .monospacedDigit()
                         .lineLimit(2)
                         .minimumScaleFactor(0.7)
                 }
             }
-            .foregroundStyle(.white)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(ink, in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(ink, lineWidth: 3))
 
             // How it's going.
             HStack(alignment: .lastTextBaseline) {
