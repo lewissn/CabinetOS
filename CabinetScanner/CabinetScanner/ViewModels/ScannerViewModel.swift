@@ -13,10 +13,14 @@ final class ScannerViewModel: ObservableObject {
 
     @Published var scanState: ScanState = .scanning(hint: "Scan label — find QR code")
     @Published var lastSuccessLabel: String?
-    /// Continuous mode is default-ON: opening a panel box almost always means
-    /// scanning more than one panel, and the back-and-forth was a friction
-    /// point. Toggle it off in the scanner UI for one-shot scans.
-    @Published var continuousMode: Bool = true
+    /// One scan at a time is the default again: the bench asked for the
+    /// camera to close after a good scan, which is how it used to work.
+    /// Continuous is one tap away in the scanner and is remembered per device,
+    /// so whoever prefers it only switches once.
+    @Published var continuousMode: Bool = UserDefaults.standard.bool(forKey: ScannerViewModel.continuousModeKey) {
+        didSet { UserDefaults.standard.set(continuousMode, forKey: Self.continuousModeKey) }
+    }
+    static let continuousModeKey = "scanner.continuousMode"
     @Published var shouldDismiss = false
 
     /// Dedicated success-flash banner that is independent of `scanState`.

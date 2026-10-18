@@ -156,17 +156,23 @@ struct DashboardView: View {
                 Task { await vm.refresh() }
             }
         default:
-            Button { vm.selectedTile = .dueToday } label: {
-                Headline(
-                    value: PaperFormat.int(vm.intelligence.dueToday),
-                    unit: vm.intelligence.dueToday == 1 ? "job due out today" : "jobs due out today",
-                    detail: "\(PaperFormat.int(vm.intelligence.dueTomorrow)) tomorrow"
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+            let today = vm.intelligence.todayJobs
+            let toGo = today.filter { $0.stage != .despatched }.count
+            VStack(alignment: .leading, spacing: PaperSpace.l) {
+                Button { vm.selectedTile = .dueToday } label: {
+                    Headline(
+                        value: PaperFormat.int(toGo),
+                        unit: toGo == 1 ? "job still to go out today" : "jobs still to go out today",
+                        detail: "\(PaperFormat.int(today.count)) due today · \(PaperFormat.int(vm.intelligence.dueTomorrow)) tomorrow"
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Shows the jobs due today")
+
+                if !today.isEmpty { StageSummary(jobs: today) }
             }
-            .buttonStyle(.plain)
-            .accessibilityHint("Shows the jobs due today")
         }
     }
 
@@ -214,23 +220,30 @@ struct DashboardView: View {
                     Text("Load last drop first").paperType(.footnote).foregroundStyle(PaperColor.tertiary)
                 }
                 ForEach(Array(vm.intelligence.inHouseJobs.enumerated()), id: \.element.id) { index, job in
-                    RowContainer {
-                        HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
-                            Text("\(index + 1)")
-                                .paperType(.subhead, numeric: true)
-                                .foregroundStyle(PaperColor.secondary)
-                                .frame(width: 22, alignment: .leading)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(job.customer).paperType(.body).foregroundStyle(PaperColor.ink).lineLimit(1)
-                                Code("SO \(job.salesOrder)")
-                            }
-                            Spacer(minLength: PaperSpace.m)
-                            if let postcode = job.postcode, !postcode.isEmpty {
-                                Code(postcode, color: PaperColor.ink)
+                    NavigationLink {
+                        JobLookupView(salesOrder: job.salesOrder, customer: job.customer)
+                    } label: {
+                        RowContainer {
+                            HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
+                                Text("\(index + 1)")
+                                    .paperType(.subhead, numeric: true)
+                                    .foregroundStyle(PaperColor.secondary)
+                                    .frame(width: 22, alignment: .leading)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(job.customer).paperType(.body).foregroundStyle(PaperColor.ink).lineLimit(1)
+                                    HStack(spacing: PaperSpace.s) {
+                                        Code("SO \(job.salesOrder)")
+                                        if let postcode = job.postcode, !postcode.isEmpty { Code(postcode) }
+                                    }
+                                }
+                                Spacer(minLength: PaperSpace.m)
+                                StatusText(job.stage.label, tone: job.stage.tone)
                             }
                         }
+                        .accessibilityElement(children: .combine)
                     }
-                    .accessibilityElement(children: .combine)
+                    .buttonStyle(.plain)
+                    .disabled(job.salesOrder == "—")
                 }
             }
             .section()
@@ -307,15 +320,89 @@ private struct CourierGroupRow: View {
                 }
                 Spacer(minLength: PaperSpace.m)
                 VStack(alignment: .trailing, spacing: 3) {
-                    Text("\(PaperFormat.int(group.dueToday)) today")
+                    let toGo = group.todayJobs.filter { $0.stage != .despatched }.count
+                    Text(group.dueToday == 0 ? "0 today" : "\(PaperFormat.int(toGo)) of \(PaperFormat.int(group.dueToday)) to go today")
                         .paperType(.subhead, numeric: true)
-                        .foregroundStyle(group.dueToday > 0 ? PaperColor.ink : PaperColor.secondary)
+                        .foregroundStyle(toGo > 0 ? PaperColor.ink : PaperColor.secondary)
                     if group.dueTomorrow > 0 {
                         Text("\(PaperFormat.int(group.dueTomorrow)) tomorrow")
                             .paperType(.caption, numeric: true)
                             .foregroundStyle(PaperColor.tertiary)
                     }
                 }
+                PaperIcon(.chevronRight, size: 14, color: PaperColor.faint)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+// ============================================================
+// MARK: - Stages
+// ============================================================
+
+extension DispatchStage {
+    var label: String {
+        switch self {
+        case .toPack: "To pack"
+        case .packing: "Packing"
+        case .packed: "Packed"
+        case .despatched: "Despatched"
+        }
+    }
+
+    var tone: Tone {
+        switch self {
+        case .toPack: .neutral
+        case .packing: .progress
+        case .packed, .despatched: .done
+        }
+    }
+}
+
+/// Today's jobs by how far they've got, from ShopVOX's steps.
+private struct StageSummary: View {
+    let jobs: [DispatchJob]
+
+    private func count(_ stage: DispatchStage) -> Int { jobs.filter { $0.stage == stage }.count }
+
+    var body: some View {
+        let total = Double(max(jobs.count, 1))
+        VStack(alignment: .leading, spacing: PaperSpace.m) {
+            PaperCompositionBar([
+                PaperSegment(id: "out", fraction: Double(count(.despatched) + count(.packed)) / total, color: PaperColor.success),
+                PaperSegment(id: "packing", fraction: Double(count(.packing)) / total, color: PaperColor.accent),
+                PaperSegment(id: "to", fraction: Double(count(.toPack)) / total, color: PaperColor.track),
+            ], height: 10)
+            PaperFlowLayout(spacing: PaperSpace.l) {
+                ForEach([DispatchStage.despatched, .packed, .packing, .toPack], id: \.self) { stage in
+                    if count(stage) > 0 {
+                        StatusText("\(count(stage)) \(stage.label.lowercased())", tone: stage.tone)
+                    }
+                }
+            }
+            Text("From each job's step in ShopVOX.")
+                .paperType(.caption).foregroundStyle(PaperColor.tertiary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct DispatchJobRow: View {
+    let job: DispatchJob
+
+    var body: some View {
+        RowContainer {
+            HStack(alignment: .center, spacing: PaperSpace.m) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(job.customer).paperType(.body).foregroundStyle(PaperColor.ink).lineLimit(1)
+                    HStack(spacing: PaperSpace.s) {
+                        Code("SO \(job.salesOrder)")
+                        if let postcode = job.postcode, !postcode.isEmpty { Code(postcode) }
+                    }
+                }
+                Spacer(minLength: PaperSpace.m)
+                StatusText(job.stage.label, tone: job.stage.tone)
                 PaperIcon(.chevronRight, size: 14, color: PaperColor.faint)
             }
         }
@@ -344,6 +431,13 @@ private struct TileDetailSheet: View {
     }
 
     var body: some View {
+        NavigationStack {
+            content
+                .toolbar(.hidden, for: .navigationBar)
+        }
+    }
+
+    private var content: some View {
         SheetScreen(title) {
             VStack(alignment: .leading, spacing: 0) {
                 if sections.isEmpty {
@@ -358,19 +452,15 @@ private struct TileDetailSheet: View {
                                 Text("\(section.jobs.count)").paperType(.footnote, numeric: true).foregroundStyle(PaperColor.tertiary)
                             }
                             ForEach(section.jobs) { job in
-                                RowContainer {
-                                    HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text(job.customer).paperType(.body).foregroundStyle(PaperColor.ink).lineLimit(1)
-                                            Code("SO \(job.salesOrder)")
-                                        }
-                                        Spacer(minLength: PaperSpace.m)
-                                        if let postcode = job.postcode, !postcode.isEmpty {
-                                            Code(postcode, color: PaperColor.ink)
-                                        }
-                                    }
+                                // Through to the job page, where a courier
+                                // consignment can be raised for it.
+                                NavigationLink {
+                                    JobLookupView(salesOrder: job.salesOrder, customer: job.customer)
+                                } label: {
+                                    DispatchJobRow(job: job)
                                 }
-                                .accessibilityElement(children: .combine)
+                                .buttonStyle(.plain)
+                                .disabled(job.salesOrder == "—")
                             }
                         }
                         .section(top: PaperSpace.xxl)

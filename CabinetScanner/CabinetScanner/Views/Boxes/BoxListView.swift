@@ -8,6 +8,8 @@ struct BoxListView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var boxToDelete: Box?
+    @EnvironmentObject private var toaster: Toaster
+    @AppStorage("labels.printOnClose") private var printOnClose = true
 
     init(consignment: Consignment, manifestId: String, manifestName: String) {
         _viewModel = StateObject(wrappedValue: BoxListViewModel(
@@ -67,6 +69,16 @@ struct BoxListView: View {
                     }
 
                     addChips.paperListRow(top: PaperSpace.xl)
+
+                    if !viewModel.boxes.isEmpty {
+                        Button {
+                            printLabels(viewModel.boxes, numbered: true)
+                        } label: {
+                            Label { Text("Print all \(viewModel.boxes.count) labels") } icon: { PaperIcon(.printer, size: 18) }
+                        }
+                        .buttonStyle(.paperPill(.outline, .large, fullWidth: true))
+                        .paperListRow(top: PaperSpace.section)
+                    }
 
                     Button {
                         Task { await viewModel.finishConsignment() }
@@ -176,7 +188,16 @@ struct BoxListView: View {
             PaperFlowLayout(spacing: PaperSpace.s) {
                 ForEach(Box.BoxType.allCases, id: \.self) { type in
                     Button("+ \(type.chipLabel)") {
-                        Task { await viewModel.createBox(type: type, wrappedBy: appState.operatorName, deviceId: appState.deviceId) }
+                        Task {
+                            let before = Set(viewModel.boxes.map(\.id))
+                            await viewModel.createBox(type: type, wrappedBy: appState.operatorName, deviceId: appState.deviceId)
+                            // These close as they're added, so their label is
+                            // due now, like a panel box's at Close box.
+                            if type.isAutoClose, printOnClose,
+                               let added = viewModel.boxes.first(where: { !before.contains($0.id) }) {
+                                printLabels([added], numbered: false)
+                            }
+                        }
                     }
                     .buttonStyle(.paperChip())
                     .accessibilityLabel("Add a \(type.label.lowercased())")
@@ -184,6 +205,43 @@ struct BoxListView: View {
             }
             Text("Fitting kit, runner and rail boxes close as they're added.")
                 .paperType(.caption).foregroundStyle(PaperColor.tertiary)
+        }
+    }
+}
+
+// MARK: - Labels
+
+extension BoxListView {
+    /// "BJS" from "BJS 24 Oct", the way the box screen reads it.
+    private var courier: String {
+        let name = viewModel.manifestName
+        guard let firstDigit = name.firstIndex(where: \.isNumber) else { return name }
+        return String(name[..<firstDigit]).trimmingCharacters(in: .whitespaces)
+    }
+
+    private func label(for box: Box, of count: Int?) -> BoxLabel {
+        let contents: String
+        if let dims = box.boxType.fixedDimensions {
+            contents = "\(dims.displaySize) · \(dims.displayWeight)"
+        } else {
+            contents = Format.count(box.itemCount, "panel")
+        }
+        return BoxLabel(customer: consignment.title, reference: consignment.jobRef, boxKind: box.boxType.label,
+                        boxNumber: box.boxNumber, boxCount: count, contents: contents, courier: courier)
+    }
+
+    /// One page per box, straight to the label printer. "Box 2 of 5" only
+    /// when every box is printed together, because only then is 5 known.
+    private func printLabels(_ boxes: [Box], numbered: Bool) {
+        let sorted = boxes.sorted { $0.boxNumber < $1.boxNumber }
+        let pages = sorted.map { AnyView(label(for: $0, of: numbered ? viewModel.boxes.count : nil)) }
+        Task {
+            let outcome = await LabelPrinter.shared.print(pages, jobName: "\(consignment.title) labels")
+            if case .printed(let name) = outcome, pages.count > 1 {
+                toaster.show("\(pages.count) labels sent to \(name)")
+            } else if let message = outcome.message {
+                toaster.show(message)
+            }
         }
     }
 }

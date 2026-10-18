@@ -22,6 +22,8 @@ struct BoxDetailView: View {
     /// Set once the box has closed, so the screen pops after the sheet has
     /// finished going away rather than in the same instant.
     @State private var popAfterSheet = false
+    /// Print the box's label as it closes. Remembered on the device.
+    @AppStorage("labels.printOnClose") private var printOnClose = true
     @State private var cabinets: [ScanCacheService.CabinetSummary] = []
 
     init(box: Box, manifestId: String, consignmentId: String, customerName: String, manifestName: String) {
@@ -52,6 +54,17 @@ struct BoxDetailView: View {
                     BarIcon(glyph: .keyboard, label: "Add a panel by hand") { showManualEntry = true }
                 }
                 BarIcon(glyph: .printer, label: "Print label") { printBoxLabel() }
+                    .contextMenu {
+                        Button {
+                            Task {
+                                let outcome = await LabelPrinter.shared.printWithOptions([AnyView(label)], jobName: labelJobName)
+                                if let message = outcome.message { toaster.show(message) }
+                            }
+                        } label: { Label("Print with options…", systemImage: "printer.dotmatrix") }
+                        Button {
+                            LabelPrinter.share([AnyView(label)], fileName: labelJobName)
+                        } label: { Label("Share label…", systemImage: "square.and.arrow.up") }
+                    }
                 moreMenu
             }
         } content: {
@@ -134,6 +147,7 @@ struct BoxDetailView: View {
                 missingPreview: tracksPanels ? Array(viewModel.missingPanelLabels.prefix(5)) : [],
                 customerName: viewModel.customerName,
                 isClosing: isClosing,
+                printOnClose: $printOnClose,
                 onClose: performClose
             )
             .paperSheet(detents: [.medium, .large])
@@ -380,6 +394,19 @@ struct BoxDetailView: View {
             } label: {
                 Label("Print label", systemImage: "printer")
             }
+            Button {
+                Task {
+                    let outcome = await LabelPrinter.shared.printWithOptions([AnyView(label)], jobName: labelJobName)
+                    if let message = outcome.message { toaster.show(message) }
+                }
+            } label: {
+                Label("Print with options…", systemImage: "printer.dotmatrix")
+            }
+            Button {
+                LabelPrinter.share([AnyView(label)], fileName: labelJobName)
+            } label: {
+                Label("Share label…", systemImage: "square.and.arrow.up")
+            }
 
             if viewModel.box.isClosed && viewModel.box.boxType.fixedDimensions == nil {
                 Button {
@@ -408,9 +435,16 @@ struct BoxDetailView: View {
 
     private func performClose() {
         Task {
+            // The first time, choose the printer while the sheet is still up,
+            // so the picker isn't fighting the screen closing behind it.
+            if printOnClose && !LabelPrinter.shared.hasSavedPrinter {
+                await LabelPrinter.shared.choosePrinter()
+            }
             isClosing = true
             let count = viewModel.items.count
             let number = viewModel.box.boxNumber
+            let closingLabel = label
+            let jobName = labelJobName
             guard await viewModel.closeBox(
                 wrappedBy: appState.operatorName,
                 deviceId: appState.deviceId
@@ -427,37 +461,35 @@ struct BoxDetailView: View {
             toaster.show("Box \(number) closed · \(Format.count(count, "panel"))")
             popAfterSheet = true
             showCloseSheet = false
+            if printOnClose {
+                let outcome = await LabelPrinter.shared.print([AnyView(closingLabel)], jobName: jobName)
+                if let message = outcome.message { toaster.show("Box \(number) closed · \(message.lowercasedFirst)") }
+            }
         }
     }
 
+    // MARK: - Label
+
+    private var label: BoxLabel {
+        let name = BoxLabel.splitName(viewModel.customerName)
+        let contents: String
+        if let dims = box.boxType.fixedDimensions {
+            contents = "\(dims.displaySize) · \(dims.displayWeight)"
+        } else {
+            contents = Format.count(viewModel.items.count, "panel")
+        }
+        return BoxLabel(customer: name.customer, reference: name.reference, boxKind: box.boxType.label,
+                        boxNumber: box.boxNumber, contents: contents, courier: viewModel.shippingMethod)
+    }
+
+    private var labelJobName: String { "\(viewModel.customerName) box \(box.boxNumber)" }
+
+    /// One tap: straight to the remembered label printer, 4×6" selected.
     private func printBoxLabel() {
-        let labelView = BoxLabelView(
-            customerName: viewModel.customerName,
-            boxType: viewModel.box.boxType.displayName,
-            boxNumber: viewModel.box.boxNumber,
-            shippingMethod: viewModel.shippingMethod
-        )
-
-        let mmToPoints: CGFloat = 72.0 / 25.4
-        let widthPt = 100.0 * mmToPoints
-        let heightPt = 150.0 * mmToPoints
-
-        let renderer = ImageRenderer(content:
-            labelView
-                .frame(width: widthPt, height: heightPt)
-                .background(.white)
-        )
-        renderer.scale = 3.0
-
-        guard let image = renderer.uiImage else { return }
-
-        guard let windowScene = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene }).first,
-              let rootVC = windowScene.windows.first?.rootViewController else { return }
-
-        let activityVC = UIActivityViewController(activityItems: [image], applicationActivities: nil)
-        activityVC.popoverPresentationController?.sourceView = rootVC.view
-        rootVC.present(activityVC, animated: true)
+        Task {
+            let outcome = await LabelPrinter.shared.print([AnyView(label)], jobName: labelJobName)
+            if let message = outcome.message { toaster.show(message) }
+        }
     }
 
     private func fixedBoxInfo(_ dims: Box.BoxType.Dimensions) -> some View {
@@ -501,6 +533,7 @@ struct CloseBoxSheet: View {
     let missingPreview: [String]
     let customerName: String
     let isClosing: Bool
+    @Binding var printOnClose: Bool
     let onClose: () -> Void
 
     var body: some View {
@@ -538,6 +571,26 @@ struct CloseBoxSheet: View {
                 }
             }
             Button {
+                printOnClose.toggle()
+            } label: {
+                HStack(spacing: PaperSpace.m) {
+                    PaperCheck(printOnClose ? .done : .open, size: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Print its label").paperType(.body).foregroundStyle(PaperColor.ink)
+                        Text(LabelPrinter.shared.savedPrinterName.map { "On \($0), 4×6\"" } ?? "Choose the label printer the first time")
+                            .paperType(.footnote).foregroundStyle(PaperColor.secondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: PaperSpace.tap)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(printOnClose ? .isSelected : [])
+            .screen()
+            .padding(.top, PaperSpace.s)
+
+            Button {
                 onClose()
             } label: {
                 if isClosing {
@@ -552,47 +605,5 @@ struct CloseBoxSheet: View {
             .padding(.vertical, PaperSpace.l)
         }
         .paperBackground()
-    }
-}
-
-// MARK: - Box Label (100mm x 150mm thermal print layout)
-
-private struct BoxLabelView: View {
-    let customerName: String
-    let boxType: String
-    let boxNumber: Int
-    let shippingMethod: String
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Image("CabinetLogo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(height: 40)
-                Spacer()
-            }
-            .padding(.bottom, 16)
-
-            Spacer()
-
-            VStack(spacing: 12) {
-                Text(customerName)
-                    .font(.system(size: 28, weight: .bold))
-                    .multilineTextAlignment(.center)
-
-                Text("\(boxType) #\(boxNumber)")
-                    .font(.system(size: 22, weight: .bold))
-                    .multilineTextAlignment(.center)
-            }
-
-            Spacer()
-
-            Text(shippingMethod)
-                .font(.system(size: 20, weight: .bold))
-                .frame(maxWidth: .infinity, alignment: .center)
-        }
-        .padding(20)
-        .foregroundStyle(.black)
     }
 }

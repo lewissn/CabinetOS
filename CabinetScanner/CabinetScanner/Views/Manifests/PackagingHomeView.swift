@@ -162,14 +162,16 @@ private struct ConsignmentListScreen: View {
     var body: some View { ConsignmentListView(viewModel: viewModel) }
 }
 
-private struct ManualManifestScreen: View {
+struct ManualManifestScreen: View {
     @StateObject private var viewModel: ManualManifestDetailViewModel
+    var backLabel = "Packing"
 
-    init(manifest: ManualManifest) {
+    init(manifest: ManualManifest, backLabel: String = "Packing") {
         _viewModel = StateObject(wrappedValue: ManualManifestDetailViewModel(manifest: manifest))
+        self.backLabel = backLabel
     }
 
-    var body: some View { ManualManifestDetailView(viewModel: viewModel) }
+    var body: some View { ManualManifestDetailView(viewModel: viewModel, backLabel: backLabel) }
 }
 
 // MARK: - Navigation enum

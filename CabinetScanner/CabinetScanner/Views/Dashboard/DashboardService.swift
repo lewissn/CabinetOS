@@ -40,6 +40,40 @@ struct DispatchJob: Identifiable {
     let postcode: String?
     let dueDate: Date
     let shippingMethod: String
+    /// Where the job is, from the ShopVOX step on the jobs row.
+    var stage: DispatchStage = .toPack
+}
+
+/// How far a job due out has got, read from ShopVOX's current step.
+///
+/// The jobs row keeps a job in the Post-Production group after Despatch is
+/// completed, so without this a job despatched on Tuesday still counted as
+/// due out on Friday. Every job due in the week of 12 Oct 2026 that the old
+/// query returned was already "Despatch: completed".
+enum DispatchStage: Int, Comparable {
+    case toPack, packing, packed, despatched
+
+    init(step: String?, status: String?) {
+        let step = step ?? ""
+        let status = (status ?? "").lowercased()
+        switch step {
+        case "Despatch":
+            self = status == "completed" ? .despatched : .packed
+        case "Fitting Kit Preparation":
+            // Runs after Pack & Wrap: the panels are packed.
+            self = .packed
+        case "Pack & Wrap":
+            switch status {
+            case "completed": self = .packed
+            case "started", "paused", "idling", "stopped": self = .packing
+            default: self = .toPack
+            }
+        default:
+            self = .toPack
+        }
+    }
+
+    static func < (a: DispatchStage, b: DispatchStage) -> Bool { a.rawValue < b.rawValue }
 }
 
 extension Calendar {
@@ -98,7 +132,8 @@ final class DashboardService {
                 salesOrder: row.salesOrderString ?? "—",
                 postcode: row.postcode,
                 dueDate: dueDate,
-                shippingMethod: method
+                shippingMethod: method,
+                stage: DispatchStage(step: row.workflowStep, status: row.workflowStatus)
             )
 
             if isToday {
@@ -162,7 +197,7 @@ final class DashboardService {
         let endString   = Self.isoDateFormatter.string(from: endDate)
 
         let urlString = Configuration.supabaseURL + "/rest/v1/jobs"
-            + "?select=id,due_raw,customer,sales_order,shipping_method"
+            + "?select=id,due_raw,customer,sales_order,shipping_method,workflow_step,workflow_status"
             + "&due_raw=gte.\(startString)"
             + "&due_raw=lt.\(endString)"
             + "&workflow_group=in.(Post-Production,Production)"
@@ -210,6 +245,8 @@ private struct JobRow: Decodable {
     let salesOrder: FlexibleString?
     let shippingMethod: String?
     let postcode: String?
+    let workflowStep: String?
+    let workflowStatus: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -218,6 +255,8 @@ private struct JobRow: Decodable {
         case salesOrder     = "sales_order"
         case shippingMethod = "shipping_method"
         case postcode
+        case workflowStep   = "workflow_step"
+        case workflowStatus = "workflow_status"
     }
 
     var parsedDueDate: Date? {

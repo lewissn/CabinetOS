@@ -8,6 +8,10 @@ final class ManualManifestDetailViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var toastMessage: String?
     @Published var showSummary = false
+    /// What ShopVOX did when a job-linked consignment was finished, kept on
+    /// screen: a completed step can't be undone, so the outcome must be readable.
+    @Published var finishOutcome: CourierConsignmentFinished?
+    @Published var isFinishing = false
 
     private let service = ManualManifestService()
 
@@ -55,39 +59,60 @@ final class ManualManifestDetailViewModel: ObservableObject {
         }
     }
 
+    /// Finish the consignment.
+    ///
+    /// One raised from a job page goes through Ops, which closes it and then
+    /// completes Pack & Wrap and Despatch in ShopVOX, so the job moves on
+    /// without anyone doing it by hand. One typed at the bench has no job
+    /// behind it and is closed in Supabase as before.
     func finishManifest() async {
+        guard !isFinishing else { return }
+        isFinishing = true
+        defer { isFinishing = false }
+        errorMessage = nil
         do {
-            try await service.finishManifest(id: manifest.id)
-            manifest = ManualManifest(
-                id: manifest.id,
-                manifestName: manifest.manifestName,
-                courier: manifest.courier,
-                status: .finished,
-                note: manifest.note,
-                createdAt: manifest.createdAt,
-                updatedAt: Date()
-            )
+            if let jobId = manifest.jobIndexId {
+                let result = try await JobIndexService().finishConsignment(jobId: jobId, manifestId: manifest.id)
+                finishOutcome = result
+                guard result.ok, result.finished != false else {
+                    errorMessage = result.error ?? result.message ?? "The consignment couldn't be finished."
+                    HapticService.error()
+                    return
+                }
+            } else {
+                try await service.finishManifest(id: manifest.id)
+            }
+            manifest = withStatus(.finished)
             toastMessage = "Manifest finished"
             HapticService.success()
             showSummary = true
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = (error as? JobIndexError)?.errorDescription ?? error.localizedDescription
             HapticService.error()
         }
+    }
+
+    /// The same manifest with a new status, keeping its link to the job.
+    private func withStatus(_ status: ManualManifest.ManualManifestStatus) -> ManualManifest {
+        var copy = ManualManifest(
+            id: manifest.id,
+            manifestName: manifest.manifestName,
+            courier: manifest.courier,
+            status: status,
+            note: manifest.note,
+            createdAt: manifest.createdAt,
+            updatedAt: Date()
+        )
+        copy.jobIndexId = manifest.jobIndexId
+        copy.jobReference = manifest.jobReference
+        copy.stepsCompletedAt = finishOutcome?.stepsCompleted == true ? Date() : manifest.stepsCompletedAt
+        return copy
     }
 
     func reopenManifest() async {
         do {
             try await service.reopenManifest(id: manifest.id)
-            manifest = ManualManifest(
-                id: manifest.id,
-                manifestName: manifest.manifestName,
-                courier: manifest.courier,
-                status: .open,
-                note: manifest.note,
-                createdAt: manifest.createdAt,
-                updatedAt: Date()
-            )
+            manifest = withStatus(.open)
             toastMessage = "Manifest reopened"
             HapticService.success()
         } catch {

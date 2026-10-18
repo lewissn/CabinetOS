@@ -30,7 +30,7 @@ final class JobConsignmentViewModel: ObservableObject {
     @Published var name: String = ""
     @Published var courier: String = ""
 
-    private let jobId: String
+    let jobId: String
     private let service: JobIndexService
 
     /// What the bench actually uses, by volume: APC on 504 of 554.
@@ -121,6 +121,7 @@ struct JobConsignmentSection: View {
             ForEach(viewModel.existing) { consignment in
                 CourierConsignmentRow(
                     consignment: consignment,
+                    jobId: viewModel.jobId,
                     isWorking: viewModel.isWorking,
                     finish: { confirmingFinish = consignment }
                 )
@@ -237,8 +238,28 @@ struct JobConsignmentSection: View {
 
 private struct CourierConsignmentRow: View {
     let consignment: CourierConsignment
+    let jobId: String
     let isWorking: Bool
     let finish: () -> Void
+
+    /// The consignment as the Packing tab knows it, linked to this job so
+    /// finishing it there moves the job on too.
+    private var manifest: ManualManifest {
+        let created = consignment.createdAt.flatMap {
+            ISO8601DateFormatter.withFractions.date(from: $0) ?? ISO8601DateFormatter().date(from: $0)
+        } ?? Date()
+        var m = ManualManifest(
+            id: consignment.id,
+            manifestName: consignment.manifestName,
+            courier: consignment.courier,
+            status: consignment.isOpen ? .open : .finished,
+            note: nil,
+            createdAt: created,
+            updatedAt: created
+        )
+        m.jobIndexId = jobId
+        return m
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: PaperSpace.s) {
@@ -254,9 +275,19 @@ private struct CourierConsignmentRow: View {
             }
 
             if consignment.isOpen {
-                Button("Finish consignment", action: finish)
-                    .buttonStyle(.paperPill(.outline, .compact))
-                    .disabled(isWorking)
+                HStack(spacing: PaperSpace.m) {
+                    // Straight to its boxes, rather than finding it again in
+                    // the Packing tab.
+                    NavigationLink {
+                        ManualManifestScreen(manifest: manifest, backLabel: "Job")
+                    } label: {
+                        Text("Pack boxes")
+                    }
+                    .buttonStyle(.paperPill(.ink, .compact))
+                    Button("Finish consignment", action: finish)
+                        .buttonStyle(.paperPill(.outline, .compact))
+                        .disabled(isWorking)
+                }
             } else if consignment.hasMovedTheJobOn {
                 Text("Completed the job's steps in ShopVOX.")
                     .paperType(.caption)
@@ -296,4 +327,12 @@ private struct FinishOutcome: View {
         .padding(.vertical, PaperSpace.s)
         .background(tone.soft, in: RoundedRectangle(cornerRadius: 12))
     }
+}
+
+private extension ISO8601DateFormatter {
+    static let withFractions: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
 }

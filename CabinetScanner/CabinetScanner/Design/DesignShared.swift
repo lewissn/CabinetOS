@@ -526,3 +526,8 @@ extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
         viewControllers.count > 1
     }
 }
+
+extension String {
+    /// "Label sent to Munbyn" → "label sent to Munbyn", for joining phrases.
+    var lowercasedFirst: String { prefix(1).lowercased() + dropFirst() }
+}

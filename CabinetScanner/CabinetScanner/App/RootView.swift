@@ -150,6 +150,8 @@ private struct SettingsPlaceholderView: View {
 
                     DeviceTokenSection().section()
 
+                    LabelPrinterSection().section()
+
                     VStack(alignment: .leading, spacing: 0) {
                         PaperSectionHeader("Server")
                         FactRow(label: "Mode", value: Configuration.apiMode.rawValue.capitalized)
@@ -166,6 +168,77 @@ private struct SettingsPlaceholderView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .paperRootScreen()
+        }
+    }
+}
+
+
+// MARK: - Label printer
+
+private struct LabelPrinterSection: View {
+    @EnvironmentObject private var toaster: Toaster
+    @AppStorage("labels.printOnClose") private var printOnClose = true
+    @State private var printerName = LabelPrinter.shared.savedPrinterName
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PaperSectionHeader("Label printer") {
+                StatusText(printerName == nil ? "Not chosen" : "Ready", tone: printerName == nil ? .neutral : .done)
+            }
+            FactRow(label: "Printer", value: printerName ?? "–")
+            FactRow(label: "Label", value: "4 × 6 in")
+
+            Button {
+                printOnClose.toggle()
+            } label: {
+                HStack(spacing: PaperSpace.m) {
+                    PaperCheck(printOnClose ? .done : .open, size: 24)
+                    Text("Print a box's label when it closes").paperType(.body).foregroundStyle(PaperColor.ink)
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: 52)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(printOnClose ? .isSelected : [])
+
+            HStack(spacing: PaperSpace.m) {
+                Button(printerName == nil ? "Choose printer" : "Change printer") {
+                    Task {
+                        await LabelPrinter.shared.choosePrinter()
+                        printerName = LabelPrinter.shared.savedPrinterName
+                    }
+                }
+                .buttonStyle(.paperPill(printerName == nil ? .accent : .outline, .regular))
+
+                if printerName != nil {
+                    Button("Print a test label") {
+                        Task {
+                            let sample = BoxLabel(customer: "Test label", reference: "Not a real box", boxKind: "Panel box",
+                                                  boxNumber: 1, contents: "Check the edges and the type", courier: "APC")
+                            let outcome = await LabelPrinter.shared.print([AnyView(sample)], jobName: "Test label")
+                            if let message = outcome.message { toaster.show(message) }
+                        }
+                    }
+                    .buttonStyle(.paperPill(.outline, .regular))
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.top, PaperSpace.s)
+
+            if printerName != nil {
+                Button("Forget this printer", role: .destructive) {
+                    LabelPrinter.shared.forgetPrinter()
+                    printerName = nil
+                }
+                .buttonStyle(.paperText(PaperColor.danger, .subhead, weight: .medium))
+            }
+
+            Text("Box labels print straight to this printer with the 4 × 6 in label selected. Hold the print button on a box for the full print options or to share the label instead.")
+                .paperType(.footnote)
+                .foregroundStyle(PaperColor.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, PaperSpace.m)
         }
     }
 }

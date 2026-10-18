@@ -5,6 +5,7 @@ import SwiftUI
 /// is closed. Reads and writes go straight to Supabase, as before.
 struct ManualManifestDetailView: View {
     @ObservedObject var viewModel: ManualManifestDetailViewModel
+    var backLabel = "Packing"
     @State private var boxToDelete: ManualManifestBox?
     @State private var showFinishConfirm = false
     @State private var showReopenConfirm = false
@@ -12,7 +13,7 @@ struct ManualManifestDetailView: View {
     private var manifest: ManualManifest { viewModel.manifest }
 
     var body: some View {
-        PushedScreen(back: "Packing", scrolls: false) {
+        PushedScreen(back: backLabel, scrolls: false) {
             if !manifest.isFinished {
                 Button("Add box") {
                     Task { await viewModel.addBox() }
@@ -37,6 +38,10 @@ struct ManualManifestDetailView: View {
 
                     if let error = viewModel.errorMessage {
                         Notice(text: error, tone: .held).paperListRow(top: PaperSpace.l)
+                    }
+
+                    if let outcome = viewModel.finishOutcome {
+                        FinishStepsOutcome(result: outcome).paperListRow(top: PaperSpace.l)
                     }
 
                     if !viewModel.openBoxes.isEmpty {
@@ -102,13 +107,17 @@ struct ManualManifestDetailView: View {
         } message: {
             Text("The box and everything in it are deleted. This can't be undone.")
         }
-        .alert("Finish this manifest?", isPresented: $showFinishConfirm) {
+        .alert(manifest.movesAJobOn ? "Finish and complete the job?" : "Finish this manifest?", isPresented: $showFinishConfirm) {
             Button("Cancel", role: .cancel) {}
-            Button("Finish manifest") {
+            Button(manifest.movesAJobOn ? "Finish and complete the job" : "Finish manifest") {
                 Task { await viewModel.finishManifest() }
             }
         } message: {
-            Text("This locks the manifest. You can reopen it later if needed.")
+            if manifest.movesAJobOn, manifest.stepsCompletedAt == nil {
+                Text("This closes the consignment and completes Pack & Wrap and then Despatch in ShopVOX. Neither can be undone from the app, and completing Despatch drafts the customer's despatch email.")
+            } else {
+                Text("This locks the manifest. You can reopen it later if needed.")
+            }
         }
         .alert("Reopen this manifest?", isPresented: $showReopenConfirm) {
             Button("Cancel", role: .cancel) {}
@@ -170,9 +179,22 @@ struct ManualManifestDetailView: View {
             }
         } else {
             VStack(alignment: .leading, spacing: PaperSpace.s) {
-                Button("Finish manifest") { showFinishConfirm = true }
-                    .buttonStyle(.paperPill(.accent, .floor, fullWidth: true))
-                    .disabled(!viewModel.canFinish)
+                Button {
+                    showFinishConfirm = true
+                } label: {
+                    if viewModel.isFinishing {
+                        ProgressView().tint(PaperColor.onAccent)
+                    } else {
+                        Text(manifest.movesAJobOn ? "Finish and complete the job" : "Finish manifest")
+                    }
+                }
+                .buttonStyle(.paperPill(.accent, .floor, fullWidth: true))
+                .disabled(!viewModel.canFinish || viewModel.isFinishing)
+                if manifest.movesAJobOn {
+                    Text("Raised from \(manifest.jobReference ?? "its job"), so finishing it moves the job on in ShopVOX.")
+                        .paperType(.footnote)
+                        .foregroundStyle(PaperColor.tertiary)
+                }
                 if !viewModel.canFinish && !viewModel.boxes.isEmpty {
                     Text("Close every box to finish the manifest.")
                         .paperType(.footnote)
@@ -180,6 +202,34 @@ struct ManualManifestDetailView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - What ShopVOX did
+
+/// Shown after a job-linked consignment is finished: each step's result, in
+/// the server's words. "Pack & Wrap done, Despatch refused" is the case
+/// somebody has to act on.
+struct FinishStepsOutcome: View {
+    let result: CourierConsignmentFinished
+
+    private var tone: Tone {
+        if !result.ok { return .held }
+        return result.stepsCompleted == true || result.alreadyCompleted == true ? .done : .soon
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: PaperSpace.xs) {
+            StatusText(result.message ?? (result.stepsCompleted == true ? "Job moved on in ShopVOX." : "Finished."),
+                       tone: tone, style: .subhead, lineLimit: nil)
+            ForEach(result.steps ?? []) { step in
+                StatusText(step.message, tone: step.ok ? .done : .held, style: .footnote, lineLimit: nil)
+            }
+        }
+        .padding(.horizontal, PaperSpace.l)
+        .padding(.vertical, PaperSpace.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tone.soft, in: RoundedRectangle(cornerRadius: 12))
     }
 }
 

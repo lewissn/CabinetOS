@@ -93,10 +93,10 @@ final class DashboardViewModel: ObservableObject {
         case .courierGroup(let group):
             var result: [GroupedSection] = []
             if !group.todayJobs.isEmpty {
-                result.append(GroupedSection(title: "Due Today", jobs: group.todayJobs.sorted { $0.customer < $1.customer }))
+                result.append(GroupedSection(title: "Due Today", jobs: group.todayJobs.sorted { ($0.stage, $0.customer) < ($1.stage, $1.customer) }))
             }
             if !group.tomorrowJobs.isEmpty {
-                result.append(GroupedSection(title: "Due Tomorrow", jobs: group.tomorrowJobs.sorted { $0.customer < $1.customer }))
+                result.append(GroupedSection(title: "Due Tomorrow", jobs: group.tomorrowJobs.sorted { ($0.stage, $0.customer) < ($1.stage, $1.customer) }))
             }
             return result
         }
@@ -105,7 +105,7 @@ final class DashboardViewModel: ObservableObject {
     private func groupedByMethod(_ jobs: [DispatchJob]) -> [GroupedSection] {
         let byMethod = Dictionary(grouping: jobs) { $0.shippingMethod }
         return byMethod
-            .map { GroupedSection(title: $0.key, jobs: $0.value.sorted { $0.customer < $1.customer }) }
+            .map { GroupedSection(title: $0.key, jobs: $0.value.sorted { ($0.stage, $0.customer) < ($1.stage, $1.customer) }) }
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 }

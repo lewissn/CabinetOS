@@ -13,6 +13,7 @@ struct ManualBoxDetailView: View {
     @State private var showCloseBoxConfirm = false
     @State private var showDimensionsSheet = false
     @State private var itemToDelete: ManualManifestItem?
+    @AppStorage("labels.printOnClose") private var printOnClose = true
 
     private var box: ManualManifestBox { viewModel.box }
     private var canEdit: Bool { box.isOpen && !viewModel.isManifestFinished }
@@ -22,6 +23,17 @@ struct ManualBoxDetailView: View {
     var body: some View {
         PushedScreen(back: "Manifest", scrolls: false) {
             BarIcon(glyph: .printer, label: "Print label") { printBoxLabel() }
+                .contextMenu {
+                    Button {
+                        Task {
+                            let outcome = await LabelPrinter.shared.printWithOptions([AnyView(label)], jobName: labelJobName)
+                            if let message = outcome.message { viewModel.toastMessage = message }
+                        }
+                    } label: { Label("Print with options…", systemImage: "printer.dotmatrix") }
+                    Button {
+                        LabelPrinter.share([AnyView(label)], fileName: labelJobName)
+                    } label: { Label("Share label…", systemImage: "square.and.arrow.up") }
+                }
             if box.isClosed && !viewModel.isManifestFinished {
                 Menu {
                     Button {
@@ -144,13 +156,17 @@ struct ManualBoxDetailView: View {
                 Task {
                     let closed = await viewModel.closeBoxSimple()
                     if closed {
+                        if printOnClose {
+                            let outcome = await LabelPrinter.shared.print([AnyView(label)], jobName: labelJobName)
+                            if let message = outcome.message { viewModel.toastMessage = message }
+                        }
                         try? await Task.sleep(nanoseconds: 1_000_000_000)
                         dismiss()
                     }
                 }
             }
         } message: {
-            Text("You can add its size and weight afterwards.")
+            Text(printOnClose ? "Its label prints as it closes. You can add its size and weight afterwards." : "You can add its size and weight afterwards.")
         }
         .overlay(alignment: .bottom) {
             ToastView(message: $viewModel.toastMessage, glyph: viewModel.toastMessage?.hasPrefix("Duplicate") == true ? nil : .check)
@@ -204,36 +220,24 @@ struct ManualBoxDetailView: View {
 
     // MARK: - Print
 
+    private var label: BoxLabel {
+        let name = BoxLabel.splitName(viewModel.manifestName)
+        let itemCount = viewModel.items.reduce(0) { $0 + $1.qty }
+        let contents = [box.dimensionsDisplay, box.weightDisplay].compactMap { $0 }.joined(separator: " · ")
+        return BoxLabel(customer: name.customer, reference: name.reference, boxKind: "Box",
+                        boxNumber: box.boxNumber,
+                        contents: contents.isEmpty ? Format.count(itemCount, "item") : contents,
+                        courier: viewModel.courierName)
+    }
+
+    private var labelJobName: String { "\(viewModel.manifestName) box \(box.boxNumber)" }
+
+    /// One tap: straight to the remembered label printer, 4×6" selected.
     private func printBoxLabel() {
-        let totalBoxes = 0 // Could be passed from parent if needed
-        let labelView = ManualBoxLabelView(
-            manifestName: viewModel.manifestName,
-            boxNumber: viewModel.box.boxNumber,
-            totalBoxes: totalBoxes,
-            dimensions: viewModel.box.dimensionsDisplay,
-            weight: viewModel.box.weightDisplay,
-            courier: viewModel.courierName
-        )
-
-        let mmToPoints: CGFloat = 72.0 / 25.4
-        let widthPt = 100.0 * mmToPoints
-        let heightPt = 150.0 * mmToPoints
-
-        let renderer = ImageRenderer(content:
-            labelView
-                .frame(width: widthPt, height: heightPt)
-                .background(.white)
-        )
-        renderer.scale = 3.0
-
-        guard let image = renderer.uiImage else { return }
-        guard let windowScene = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene }).first,
-              let rootVC = windowScene.windows.first?.rootViewController else { return }
-
-        let activityVC = UIActivityViewController(activityItems: [image], applicationActivities: nil)
-        activityVC.popoverPresentationController?.sourceView = rootVC.view
-        rootVC.present(activityVC, animated: true)
+        Task {
+            let outcome = await LabelPrinter.shared.print([AnyView(label)], jobName: labelJobName)
+            if let message = outcome.message { viewModel.toastMessage = message }
+        }
     }
 }
 
@@ -483,65 +487,5 @@ struct DimensionsSheet: View {
                 weightStr = wt.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(wt))" : String(format: "%.1f", wt)
             }
         }
-    }
-}
-
-// MARK: - Box Label for printing (100mm x 150mm)
-
-private struct ManualBoxLabelView: View {
-    let manifestName: String
-    let boxNumber: Int
-    let totalBoxes: Int
-    let dimensions: String?
-    let weight: String?
-    let courier: String?
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Image("CabinetLogo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(height: 40)
-                Spacer()
-            }
-            .padding(.bottom, 16)
-
-            Spacer()
-
-            VStack(spacing: 12) {
-                Text(manifestName)
-                    .font(.system(size: 28, weight: .bold))
-                    .multilineTextAlignment(.center)
-
-                if totalBoxes > 0 {
-                    Text("Box \(boxNumber)/\(totalBoxes)")
-                        .font(.system(size: 22, weight: .bold))
-                } else {
-                    Text("Box \(boxNumber)")
-                        .font(.system(size: 22, weight: .bold))
-                }
-
-                if let dims = dimensions {
-                    Text(dims)
-                        .font(.system(size: 16))
-                }
-
-                if let w = weight {
-                    Text(w)
-                        .font(.system(size: 16))
-                }
-            }
-
-            Spacer()
-
-            if let courier, !courier.isEmpty {
-                Text(courier)
-                    .font(.system(size: 24, weight: .bold))
-                    .frame(maxWidth: .infinity, alignment: .center)
-            }
-        }
-        .padding(20)
-        .foregroundStyle(.black)
     }
 }
