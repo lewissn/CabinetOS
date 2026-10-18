@@ -86,10 +86,19 @@ struct JobsHubView: View {
         .onChange(of: router.pendingJobId, initial: true) { _, _ in
             openPendingJob()
         }
+        // Every tab is alive from launch, so coming back to this one is when
+        // the board refreshes, and when a link held through Settings opens.
+        .onTabReturn {
+            openPendingJob()
+            if !isSearching { await board.load() }
+        }
     }
 
     private func openPendingJob() {
-        guard let id = router.consumeJob() else { return }
+        // A link that arrives before the device has its token stays pending:
+        // the router has sent the person to Settings, which says a job is
+        // waiting, and Save brings them back here to open it.
+        guard Configuration.hasDeviceAPIToken, let id = router.consumeJob() else { return }
 
         // Searching and a pushed detail screen fight each other; clear the
         // field so the job is not opened on top of a result list.

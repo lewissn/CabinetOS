@@ -61,7 +61,7 @@ struct BoxListView: View {
                         }
                     }
 
-                    if viewModel.boxes.isEmpty {
+                    if viewModel.boxes.isEmpty && !failedEmpty {
                         PaperEmptyState("No boxes yet", message: "Add a box below to start packing this consignment.")
                             .paperListRow(top: PaperSpace.l)
                     }
@@ -152,15 +152,18 @@ struct BoxListView: View {
         }
     }
 
+    /// The boxes didn't load: show nothing as zero.
+    private var failedEmpty: Bool { viewModel.errorMessage != nil && viewModel.boxes.isEmpty }
+
     private var summary: some View {
         VStack(alignment: .leading, spacing: PaperSpace.l) {
             let expected = consignment.expectedItemCount
             Headline(
-                value: PaperFormat.int(panelsInBoxes),
+                value: failedEmpty ? "–" : PaperFormat.int(panelsInBoxes),
                 unit: expected > 0 ? "of \(PaperFormat.int(expected)) panels in boxes" : "panels in boxes",
-                detail: "\(Format.count(viewModel.boxes.count, "box", "boxes")) · \(viewModel.openBoxes.count) open"
+                detail: failedEmpty ? nil : "\(Format.count(viewModel.boxes.count, "box", "boxes")) · \(viewModel.openBoxes.count) open"
             )
-            if expected > 0 {
+            if expected > 0 && !failedEmpty {
                 PaperBar(Double(panelsInBoxes) / Double(expected),
                          color: panelsInBoxes >= expected ? PaperColor.success : PaperColor.accent, height: 4)
             }

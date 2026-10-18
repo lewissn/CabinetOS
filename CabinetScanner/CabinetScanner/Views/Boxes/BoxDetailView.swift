@@ -19,6 +19,9 @@ struct BoxDetailView: View {
     @State private var showCloseSheet = false
     @State private var showManualEntry = false
     @State private var isClosing = false
+    /// Set once the box has closed, so the screen pops after the sheet has
+    /// finished going away rather than in the same instant.
+    @State private var popAfterSheet = false
     @State private var cabinets: [ScanCacheService.CabinetSummary] = []
 
     init(box: Box, manifestId: String, consignmentId: String, customerName: String, manifestName: String) {
@@ -117,7 +120,12 @@ struct BoxDetailView: View {
         } message: {
             Text("The box and everything scanned into it are deleted. This can't be undone.")
         }
-        .sheet(isPresented: $showCloseSheet) {
+        .sheet(isPresented: $showCloseSheet, onDismiss: {
+            if popAfterSheet {
+                popAfterSheet = false
+                dismiss()
+            }
+        }) {
             CloseBoxSheet(
                 box: box,
                 count: viewModel.items.count,
@@ -166,12 +174,22 @@ struct BoxDetailView: View {
         .onDisappear {
             viewModel.stopPolling()
         }
+        // Tabs stay alive, so leaving Packing doesn't make this disappear:
+        // stop polling while the tab is hidden and pick up again on return.
+        .onTabActiveChange { active in
+            if active {
+                viewModel.startPolling()
+                Task { await viewModel.loadBoxDetail() }
+            } else {
+                viewModel.stopPolling()
+            }
+        }
         .task {
             await viewModel.loadBoxDetail()
         }
         // Per-cabinet progress, from the cached parts list only. Nothing is
         // fetched for it: if the list isn't cached, the bars aren't shown.
-        .task(id: viewModel.jobPackedCount) {
+        .task(id: "\(viewModel.jobPackedCount)/\(viewModel.jobExpectedCount)") {
             guard tracksPanels else { return }
             cabinets = await ScanCacheService.shared.cabinets(
                 manifestId: viewModel.manifestId,
@@ -206,7 +224,7 @@ struct BoxDetailView: View {
     private var figures: some View {
         VStack(alignment: .leading, spacing: PaperSpace.l) {
             HStack(alignment: .firstTextBaseline) {
-                if viewModel.hasLoaded {
+                if viewModel.hasLoaded && !(viewModel.errorMessage != nil && viewModel.items.isEmpty) {
                     PaperFigure(PaperFormat.int(viewModel.items.count), unit: "in this box", style: .heroS)
                 } else {
                     PaperFigure("–", unit: "in this box", style: .heroS)
@@ -320,6 +338,12 @@ struct BoxDetailView: View {
 
         if !viewModel.hasLoaded {
             LoadingLine("Loading panels").paperListRow()
+        } else if viewModel.items.isEmpty && viewModel.errorMessage != nil {
+            Text("The box's contents didn't load. Pull down to try again.")
+                .paperType(.subhead)
+                .foregroundStyle(PaperColor.secondary)
+                .padding(.vertical, PaperSpace.m)
+                .paperListRow()
         } else if viewModel.items.isEmpty {
             Text(box.isOpen ? "Nothing yet. Scan a panel's label to add it." : "Nothing was scanned into this box.")
                 .paperType(.subhead)
@@ -399,10 +423,10 @@ struct BoxDetailView: View {
             // back to the boxes. The view model has already played the haptic.
             viewModel.stopPolling()
             viewModel.toastMessage = nil
-            showCloseSheet = false
             isClosing = false
             toaster.show("Box \(number) closed · \(Format.count(count, "panel"))")
-            dismiss()
+            popAfterSheet = true
+            showCloseSheet = false
         }
     }
 

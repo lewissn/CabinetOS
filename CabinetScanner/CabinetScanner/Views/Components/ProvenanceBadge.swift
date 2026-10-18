@@ -71,15 +71,18 @@ struct StepStateChip: View {
 
 // MARK: - Due date
 
-/// How a due date reads: "Late · Tue 14 Oct" in red, "Due today" in orange,
-/// else "Due Thu 23 Oct". Always the ORDER due date, never a schedule.
+/// How a due date reads: "Late · Tue 14 Oct" in red only when the server says
+/// the job is overdue, "Due today" in orange, else the plain date. A past date
+/// the server hasn't flagged (a finished job, a search hit) stays neutral.
+/// Always the ORDER due date, never a schedule.
 enum DueLine {
     static func make(isoDate: String?, isOverdue: Bool = false, now: Date = .now) -> (text: String, tone: Tone)? {
         guard let isoDate, let date = JobDateFormatting.parse(isoDate) else { return nil }
         let cal = Calendar.london
         let days = cal.dateComponents([.day], from: cal.startOfDay(for: now), to: cal.startOfDay(for: date)).day ?? 0
         let day = JobDateFormatting.medium(date)
-        if isOverdue || days < 0 { return ("Late · \(day)", .held) }
+        if isOverdue { return ("Late · \(day)", .held) }
+        if days < 0 { return ("Due \(day)", .neutral) }
         if days == 0 { return ("Due today", .soon) }
         if days == 1 { return ("Due tomorrow", .neutral) }
         return ("Due \(day)", .neutral)
@@ -87,14 +90,15 @@ enum DueLine {
 }
 
 extension DueLine {
-    /// For beside a date that's already shown: "2 days late", "Today",
-    /// "Tomorrow", "In 5 days".
+    /// For beside a date that's already shown: "2 days ago", "Today",
+    /// "Tomorrow", "In 5 days". Past dates stay neutral: whether the job is
+    /// actually late is ShopVOX's call (its days left), shown in Details.
     static func relative(isoDate: String?, now: Date = .now) -> (text: String, tone: Tone)? {
         guard let isoDate, let date = JobDateFormatting.parse(isoDate) else { return nil }
         let cal = Calendar.london
         let days = cal.dateComponents([.day], from: cal.startOfDay(for: now), to: cal.startOfDay(for: date)).day ?? 0
         switch days {
-        case ..<0: return ("\(Format.count(-days, "day")) late", .held)
+        case ..<0: return ("\(Format.count(-days, "day")) ago", .neutral)
         case 0: return ("Today", .soon)
         case 1: return ("Tomorrow", .neutral)
         default: return ("In \(Format.count(days, "day"))", .neutral)

@@ -94,7 +94,7 @@ struct NotificationBannerHost: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .overlay(alignment: .bottom) {
+            .overlay(alignment: .top) {
                 if let notification = service.toast {
                     NotificationBanner(
                         notification: notification,
@@ -104,7 +104,7 @@ struct NotificationBannerHost: ViewModifier {
                         },
                         onDismiss: { service.dismissToast() }
                     )
-                    .padding(.bottom, PaperSpace.l)
+                    .padding(.top, PaperSpace.xs)
                 }
             }
             .animation(PaperMotion.fade, value: service.toast?.id)

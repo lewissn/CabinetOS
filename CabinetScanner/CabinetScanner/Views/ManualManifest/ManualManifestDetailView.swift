@@ -26,8 +26,9 @@ struct ManualManifestDetailView: View {
                 if viewModel.isLoading && viewModel.boxes.isEmpty {
                     LoadingLine("Loading boxes").paperListRow(top: PaperSpace.xxl)
                 } else {
+                    let failedEmpty = viewModel.errorMessage != nil && viewModel.boxes.isEmpty
                     Headline(
-                        value: PaperFormat.int(viewModel.boxes.count),
+                        value: failedEmpty ? "–" : PaperFormat.int(viewModel.boxes.count),
                         unit: viewModel.boxes.count == 1 ? "box" : "boxes",
                         detail: viewModel.boxes.isEmpty ? nil : "\(viewModel.closedBoxes.count) closed · \(viewModel.openBoxes.count) open",
                         style: .heroS
@@ -61,7 +62,7 @@ struct ManualManifestDetailView: View {
                         }
                     }
 
-                    if viewModel.boxes.isEmpty {
+                    if viewModel.boxes.isEmpty && !failedEmpty {
                         PaperEmptyState("No boxes yet", message: "Add a box to start packing this consignment.",
                                         actionTitle: manifest.isFinished ? nil : "Add box") {
                             Task { await viewModel.addBox() }

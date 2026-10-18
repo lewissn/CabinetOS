@@ -80,6 +80,9 @@ struct MainTabView: View {
 
             PaperTabBar(AppTab.allCases.map { .init($0, title: $0.title, glyph: $0.glyph) }, selection: selectedTab)
                 .overlay(alignment: .top) { currentMark }
+                // Like the system tab bar, the labels stop growing at the
+                // largest standard size so five still fit across.
+                .dynamicTypeSize(...DynamicTypeSize.xxLarge)
         }
         .environmentObject(toaster)
         .paperBackground()
@@ -106,6 +109,7 @@ struct MainTabView: View {
     private func tabContent<V: View>(_ tab: AppTab, @ViewBuilder _ view: () -> V) -> some View {
         let current = router.selectedTab == tab
         return view()
+            .environment(\.isTabActive, current)
             .opacity(current ? 1 : 0)
             .allowsHitTesting(current)
             .accessibilityHidden(!current)

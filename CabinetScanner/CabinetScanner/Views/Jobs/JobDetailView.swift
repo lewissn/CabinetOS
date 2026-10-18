@@ -360,7 +360,7 @@ struct JobDetailView: View {
                 // Said once, because it is true of the whole job rather than
                 // of any one step.
                 if let reason = jobWideBlockingReason(steps) {
-                    StatusText(reason, tone: .soon).lineLimit(nil)
+                    StatusText(reason, tone: .soon, lineLimit: nil)
                 }
                 if let note = capabilities?.note {
                     // The API's limits, stated rather than met as a dead
@@ -484,8 +484,6 @@ private struct StepRow: View {
     let isAnyMoving: Bool
     let perform: (StepActionKind) -> Void
 
-    @State private var confirmingComplete = false
-
     var body: some View {
         VStack(alignment: .leading, spacing: PaperSpace.s) {
             HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
@@ -508,11 +506,7 @@ private struct StepRow: View {
             if let controls = visibleControls, !controls.isEmpty {
                 HStack(spacing: PaperSpace.s) {
                     ForEach(controls, id: \.self) { action in
-                        Button(action.title) {
-                            // Complete asks first, here as on the main button:
-                            // it is the one press the app cannot undo.
-                            if action == .complete { confirmingComplete = true } else { perform(action) }
-                        }
+                        Button(action.title) { perform(action) }
                         .buttonStyle(.paperChip())
                         .disabled(isAnyMoving || !(step.action(action)?.allowed ?? false))
                     }
@@ -531,12 +525,6 @@ private struct StepRow: View {
         .padding(.vertical, PaperSpace.m)
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .bottom) { PaperHairline(color: PaperColor.hairlineSoft) }
-        .confirmationDialog("Complete \(step.name)?", isPresented: $confirmingComplete, titleVisibility: .visible) {
-            Button("Complete \(step.name)") { perform(.complete) }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This marks the step done in ShopVOX. It cannot be undone from the app — a step reopened has to be done in ShopVOX itself.")
-        }
     }
 
     /// Actions worth putting on screen: the ones that are allowed, plus
@@ -729,8 +717,8 @@ private struct CurrentStepActions: View {
                 Text("Assigned to \(who)").paperType(.footnote).foregroundStyle(PaperColor.tertiary)
             }
         }
-        .confirmationDialog("Complete \(step.name)?", isPresented: $confirmingComplete, titleVisibility: .visible) {
-            Button("Complete \(step.name)") { perform(.complete) }
+        .confirmationDialog("Finish \(step.name)?", isPresented: $confirmingComplete, titleVisibility: .visible) {
+            Button("Finish \(step.name)") { perform(.complete) }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This marks the step done in ShopVOX. It cannot be undone from the app — a step reopened has to be done in ShopVOX itself.")

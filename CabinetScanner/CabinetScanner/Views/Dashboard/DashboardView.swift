@@ -20,6 +20,9 @@ struct DashboardView: View {
     @EnvironmentObject private var appState: AppState
     @State private var showingNotifications = false
     @State private var showingReports = false
+    /// Once the dispatch figures have loaded, a refresh keeps showing them
+    /// rather than collapsing the page while it reloads.
+    @State private var hasLoaded = false
     var switchToPackaging: () -> Void = {}
 
     /// Typing replaces the dashboard with results, exactly as it does on the
@@ -50,18 +53,23 @@ struct DashboardView: View {
             .navigationDestination(for: JobSearchResult.self) { result in
                 JobDetailView(jobId: result.id, knownTitle: result.displayTitle, jobTitle: result.jobTitle, backLabel: "Today")
             }
-            .refreshable {
-                await vm.refresh()
-                await apcVM.refresh()
-                await notifications.refresh()
-                await week.load(deviceId: appState.deviceId)
-            }
+            .refreshable { await refreshAll() }
             .task {
-                await vm.refresh()
-                await apcVM.refresh()
+                await refreshAll()
                 apcVM.startCountdown()
-                await notifications.refresh()
-                await week.load(deviceId: appState.deviceId)
+            }
+            // Every tab is alive from launch: coming back to Today is when it
+            // reloads, and the countdown only runs while it's on screen.
+            .onTabActiveChange { active in
+                if active {
+                    apcVM.startCountdown()
+                    Task { await refreshAll() }
+                } else {
+                    apcVM.stopCountdown()
+                }
+            }
+            .onChange(of: vm.state) { _, state in
+                if state == .loaded { hasLoaded = true }
             }
             .sheet(isPresented: $showingNotifications) {
                 NotificationsView().paperSheet()
@@ -78,6 +86,15 @@ struct DashboardView: View {
             }
         }
     }
+
+    private func refreshAll() async {
+        await vm.refresh()
+        await apcVM.refresh()
+        await notifications.refresh()
+        await week.load(deviceId: appState.deviceId)
+    }
+
+    private var showsDispatch: Bool { vm.state == .loaded || (hasLoaded && vm.state == .loading) }
 
     // MARK: Header
 
@@ -112,15 +129,15 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var dashboardContent: some View {
-        summary.section()
-
         if apcVM.shouldShow {
             APCDeadlineBannerView(viewModel: apcVM).section(top: PaperSpace.xxl)
         }
 
-        // Above the couriers on purpose. A despatch date that has moved
+        // Above the numbers on purpose. A despatch date that has moved
         // changes what the numbers mean, so it has to be read first.
         DespatchNoticeBoard(showingAll: $showingNotifications).section()
+
+        summary.section()
 
         leaving.section()
         inHouseLoading
@@ -132,7 +149,7 @@ struct DashboardView: View {
     @ViewBuilder
     private var summary: some View {
         switch vm.state {
-        case .loading where vm.intelligence.dueToday == 0 && vm.intelligence.dueTomorrow == 0:
+        case .loading where !hasLoaded:
             Headline(value: "–", unit: "jobs due out today", detail: "Loading")
         case .error(let message):
             PaperEmptyState("Today's despatch didn't load", message: message, actionTitle: "Try again") {
@@ -155,15 +172,19 @@ struct DashboardView: View {
 
     // MARK: Leaving, by courier
 
-    @ViewBuilder
     private var leaving: some View {
-        if vm.state == .loaded {
-            VStack(alignment: .leading, spacing: 0) {
-                PaperSectionHeader("By courier") {
-                    Button("Packing", action: switchToPackaging)
-                        .buttonStyle(.paperText(PaperColor.secondary, .footnote))
-                }
-                if vm.intelligence.courierGroups.isEmpty {
+        VStack(alignment: .leading, spacing: 0) {
+            // The way to Packing is always here, loaded or not.
+            PaperSectionHeader("By courier") {
+                Button("Packing", action: switchToPackaging)
+                    .buttonStyle(.paperText(PaperColor.secondary, .footnote))
+            }
+            if !showsDispatch {
+                Text(vm.state == .loading ? "Loading" : "Not available until today's despatch loads.")
+                    .paperType(.subhead)
+                    .foregroundStyle(PaperColor.secondary)
+                    .padding(.vertical, PaperSpace.m)
+            } else if vm.intelligence.courierGroups.isEmpty {
                     Text("Nothing is due out today or tomorrow.")
                         .paperType(.subhead)
                         .foregroundStyle(PaperColor.secondary)
@@ -179,7 +200,6 @@ struct DashboardView: View {
                         PaperRow("Everything due tomorrow", trailing: PaperFormat.int(vm.intelligence.dueTomorrow), chevron: true)
                     }
                     .buttonStyle(.plain)
-                }
             }
         }
     }
@@ -188,7 +208,7 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var inHouseLoading: some View {
-        if vm.state == .loaded && !vm.intelligence.inHouseJobs.isEmpty {
+        if showsDispatch && !vm.intelligence.inHouseJobs.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 PaperSectionHeader("In-house van") {
                     Text("Load last drop first").paperType(.footnote).foregroundStyle(PaperColor.tertiary)

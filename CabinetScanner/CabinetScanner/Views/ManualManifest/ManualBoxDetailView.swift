@@ -16,6 +16,8 @@ struct ManualBoxDetailView: View {
 
     private var box: ManualManifestBox { viewModel.box }
     private var canEdit: Bool { box.isOpen && !viewModel.isManifestFinished }
+    /// Loading, or the items didn't load: nothing is shown as zero.
+    private var itemsUnknown: Bool { viewModel.items.isEmpty && (viewModel.isLoading || viewModel.errorMessage != nil) }
 
     var body: some View {
         PushedScreen(back: "Manifest", scrolls: false) {
@@ -43,8 +45,13 @@ struct ManualBoxDetailView: View {
             List {
                 header.paperListRow()
 
-                PaperFigure(PaperFormat.int(viewModel.items.reduce(0) { $0 + $1.qty }), unit: "in this box", style: .heroS)
+                PaperFigure(itemsUnknown ? "–" : PaperFormat.int(viewModel.items.reduce(0) { $0 + $1.qty }),
+                            unit: "in this box", style: .heroS)
                     .paperListRow(top: PaperSpace.xxl)
+
+                if let error = viewModel.errorMessage {
+                    Notice(text: error, tone: .held).paperListRow(top: PaperSpace.l)
+                }
 
                 if canEdit {
                     openBoxActions.paperListRow(top: PaperSpace.xxl)

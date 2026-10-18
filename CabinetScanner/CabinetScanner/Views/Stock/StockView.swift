@@ -50,6 +50,17 @@ struct StockView: View {
                 await vm.loadMaterials()
                 await vm.loadPurchaseList()
             }
+            // As before, each section reloads when it's opened, and the screen
+            // reloads when you come back to the tab.
+            .onChange(of: segment) { _, now in
+                Task {
+                    if now == .materials { await vm.loadMaterials() } else { await vm.loadPurchaseList() }
+                }
+            }
+            .onTabReturn {
+                await vm.loadMaterials()
+                await vm.loadPurchaseList()
+            }
             .sheet(item: $vm.selectedMaterial) { material in
                 CountSheet(material: material) { qty in
                     Task {
@@ -203,7 +214,9 @@ private struct MaterialRow: View {
             HStack(alignment: .center, spacing: PaperSpace.m) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(material.materialName).paperType(.body).foregroundStyle(PaperColor.ink).lineLimit(2)
-                    Text(material.updatedAt.map { "Counted \(Format.when($0))" } ?? "Not counted yet")
+                    Text(material.qtySheets == nil
+                         ? "Not counted yet"
+                         : material.updatedAt.map { "Counted \(Format.when($0))" } ?? "Counted")
                         .paperType(.footnote, numeric: true)
                         .foregroundStyle(PaperColor.secondary)
                 }

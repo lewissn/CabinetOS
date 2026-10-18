@@ -23,7 +23,7 @@ struct ReportingView: View {
     }
 
     var body: some View {
-        SheetScreen("Packing reports") {
+        SheetScreen("Packing reports", onRefresh: { await vm.refresh() }) {
             VStack(alignment: .leading, spacing: 0) {
                 PaperTextTabs(ReportingPeriod.allCases.map { ($0, $0.label) }, selection: $vm.selectedPeriod)
                     .padding(.top, PaperSpace.s)

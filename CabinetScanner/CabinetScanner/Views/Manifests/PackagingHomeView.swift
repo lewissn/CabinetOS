@@ -52,18 +52,14 @@ struct PackagingHomeView: View {
             .padding(.bottom, 120)
         }
         .paperRootScreen()
+        // Through holders that own their view model, so this screen
+        // re-rendering (the APC countdown ticks every 30 s) never hands a
+        // pushed screen a fresh, empty one.
         .navigationDestination(for: Manifest.self) { manifest in
-            ConsignmentListView(
-                viewModel: ConsignmentListViewModel(
-                    manifestId: manifest.id,
-                    manifestName: manifest.name
-                )
-            )
+            ConsignmentListScreen(manifest: manifest)
         }
         .navigationDestination(for: ManualManifest.self) { manifest in
-            ManualManifestDetailView(
-                viewModel: ManualManifestDetailViewModel(manifest: manifest)
-            )
+            ManualManifestScreen(manifest: manifest)
         }
         .navigationDestination(item: $resumeTarget) { target in
             BoxDetailView(
@@ -96,6 +92,16 @@ struct PackagingHomeView: View {
         }
         .onDisappear {
             apcVM.stopCountdown()
+        }
+        // Every tab is alive from launch: coming back to Packing is when it
+        // reloads, and the countdown only runs while it's on screen.
+        .onTabActiveChange { active in
+            if active {
+                apcVM.startCountdown()
+                Task { await refreshAll() }
+            } else {
+                apcVM.stopCountdown()
+            }
         }
     }
 
@@ -142,6 +148,28 @@ struct PackagingHomeView: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Resume packing, \(activity.customerName), box \(activity.boxNumber)")
     }
+}
+
+// MARK: - Destination holders
+
+private struct ConsignmentListScreen: View {
+    @StateObject private var viewModel: ConsignmentListViewModel
+
+    init(manifest: Manifest) {
+        _viewModel = StateObject(wrappedValue: ConsignmentListViewModel(manifestId: manifest.id, manifestName: manifest.name))
+    }
+
+    var body: some View { ConsignmentListView(viewModel: viewModel) }
+}
+
+private struct ManualManifestScreen: View {
+    @StateObject private var viewModel: ManualManifestDetailViewModel
+
+    init(manifest: ManualManifest) {
+        _viewModel = StateObject(wrappedValue: ManualManifestDetailViewModel(manifest: manifest))
+    }
+
+    var body: some View { ManualManifestDetailView(viewModel: viewModel) }
 }
 
 // MARK: - Navigation enum

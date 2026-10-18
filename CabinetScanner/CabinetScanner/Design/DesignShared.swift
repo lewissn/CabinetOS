@@ -62,17 +62,21 @@ struct StatusText: View {
     let text: String
     let tone: Tone
     var style: PaperType = .footnote
+    var lineLimit: Int? = 1
 
-    init(_ text: String, tone: Tone, style: PaperType = .footnote) {
+    init(_ text: String, tone: Tone, style: PaperType = .footnote, lineLimit: Int? = 1) {
         self.text = text
         self.tone = tone
         self.style = style
+        self.lineLimit = lineLimit
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
             Circle().fill(tone.color).frame(width: 7, height: 7)
-            Text(text).paperType(style, numeric: true).foregroundStyle(tone.textColor).lineLimit(1)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] }
+            Text(text).paperType(style, numeric: true).foregroundStyle(tone.textColor).lineLimit(lineLimit)
+                .fixedSize(horizontal: false, vertical: lineLimit == nil)
         }
         .accessibilityElement(children: .combine)
     }
@@ -376,13 +380,16 @@ extension PushedScreen where Trailing == EmptyView {
 struct SheetScreen<Trailing: View, Content: View>: View {
     let title: String?
     var scrolls: Bool = true
+    var onRefresh: (() async -> Void)?
     @ViewBuilder var trailing: () -> Trailing
     @ViewBuilder var content: () -> Content
     @Environment(\.dismiss) private var dismiss
 
-    init(_ title: String?, scrolls: Bool = true, @ViewBuilder trailing: @escaping () -> Trailing, @ViewBuilder content: @escaping () -> Content) {
+    init(_ title: String?, scrolls: Bool = true, onRefresh: (() async -> Void)? = nil,
+         @ViewBuilder trailing: @escaping () -> Trailing, @ViewBuilder content: @escaping () -> Content) {
         self.title = title
         self.scrolls = scrolls
+        self.onRefresh = onRefresh
         self.trailing = trailing
         self.content = content
     }
@@ -393,7 +400,12 @@ struct SheetScreen<Trailing: View, Content: View>: View {
                 .screen()
                 .padding(.top, PaperSpace.s)
             if scrolls {
-                ScrollView { content().screen().padding(.bottom, PaperSpace.section) }
+                if let onRefresh {
+                    ScrollView { content().screen().padding(.bottom, PaperSpace.section) }
+                        .refreshable { await onRefresh() }
+                } else {
+                    ScrollView { content().screen().padding(.bottom, PaperSpace.section) }
+                }
             } else {
                 content().screen()
             }
@@ -403,8 +415,49 @@ struct SheetScreen<Trailing: View, Content: View>: View {
 }
 
 extension SheetScreen where Trailing == EmptyView {
-    init(_ title: String?, scrolls: Bool = true, @ViewBuilder content: @escaping () -> Content) {
-        self.init(title, scrolls: scrolls, trailing: { EmptyView() }, content: content)
+    init(_ title: String?, scrolls: Bool = true, onRefresh: (() async -> Void)? = nil, @ViewBuilder content: @escaping () -> Content) {
+        self.init(title, scrolls: scrolls, onRefresh: onRefresh, trailing: { EmptyView() }, content: content)
+    }
+}
+
+// MARK: - Tab activation
+//
+// All five tabs stay alive (see MainTabView), so `.task` and `.onAppear` on a
+// tab's screens run once at launch, not each time the tab is opened as they
+// did under TabView. Screens that refreshed on return, or that poll or count
+// down while visible, follow `isTabActive` instead.
+
+private struct TabActiveKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var isTabActive: Bool {
+        get { self[TabActiveKey.self] }
+        set { self[TabActiveKey.self] = newValue }
+    }
+}
+
+private struct TabActivityModifier: ViewModifier {
+    @Environment(\.isTabActive) private var isActive
+    let onChange: (Bool) -> Void
+
+    func body(content: Content) -> some View {
+        content.onChange(of: isActive) { _, active in onChange(active) }
+    }
+}
+
+extension View {
+    /// Called when this view's tab becomes current (true) or is left (false).
+    func onTabActiveChange(_ action: @escaping (Bool) -> Void) -> some View {
+        modifier(TabActivityModifier(onChange: action))
+    }
+
+    /// Runs `action` each time the user comes back to this view's tab.
+    func onTabReturn(_ action: @escaping () async -> Void) -> some View {
+        onTabActiveChange { active in
+            if active { Task { await action() } }
+        }
     }
 }
 
@@ -425,6 +478,7 @@ enum Format {
     private static func formatter(_ format: String) -> DateFormatter {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_GB")
+        f.timeZone = TimeZone(identifier: "Europe/London")
         f.dateFormat = format
         return f
     }

@@ -34,7 +34,9 @@ enum ScanOutcome: Equatable {
         case .error(let message):
             self = Self.problem(for: message)
         case .validating(let triplet):
-            self = .checking("\(triplet.cabinetName) · part \(triplet.partNumber)")
+            // The last "Added" stays up for its full second even when the
+            // next label is already being checked, as the old banner did.
+            self = flash.map { .added($0) } ?? .checking("\(triplet.cabinetName) · part \(triplet.partNumber)")
         case .success(let label):
             self = .added(flash ?? label)
         case .scanning(let hint):

@@ -280,8 +280,7 @@ private struct FinishOutcome: View {
     var body: some View {
         VStack(alignment: .leading, spacing: PaperSpace.s) {
             HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
-                StatusText(result.message ?? (result.stepsCompleted == true ? "Done." : "Finished."), tone: tone, style: .subhead)
-                    .lineLimit(nil)
+                StatusText(result.message ?? (result.stepsCompleted == true ? "Done." : "Finished."), tone: tone, style: .subhead, lineLimit: nil)
                 Spacer(minLength: PaperSpace.s)
                 Button(action: dismiss) {
                     PaperIcon(.close, size: 12, lineWidth: 2, color: PaperColor.secondary)
@@ -290,8 +289,7 @@ private struct FinishOutcome: View {
                 .accessibilityLabel("Dismiss")
             }
             ForEach(result.steps ?? []) { step in
-                StatusText(step.message, tone: step.ok ? .done : .held, style: .footnote)
-                    .lineLimit(nil)
+                StatusText(step.message, tone: step.ok ? .done : .held, style: .footnote, lineLimit: nil)
             }
         }
         .padding(.leading, PaperSpace.l)

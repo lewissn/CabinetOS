@@ -29,8 +29,14 @@ struct CourierManifestList: View {
                     }
                 }
                 if !viewModel.finishedManifests.isEmpty {
-                    PaperSectionHeader("Finished")
-                        .padding(.top, viewModel.openManifests.isEmpty ? 0 : PaperSpace.section)
+                    // The first header on screen always carries New.
+                    Group {
+                        if viewModel.openManifests.isEmpty {
+                            header("Finished")
+                        } else {
+                            PaperSectionHeader("Finished").padding(.top, PaperSpace.section)
+                        }
+                    }
                     ForEach(viewModel.finishedManifests) { manifest in
                         NavigationLink(value: manifest) { ManualManifestRow(manifest: manifest) }
                             .buttonStyle(.plain)
