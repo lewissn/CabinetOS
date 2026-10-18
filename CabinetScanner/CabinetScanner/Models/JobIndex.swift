@@ -505,6 +505,8 @@ struct ProductionJob: Decodable, Identifiable, Hashable {
     let currentStep: String?
     let currentStepGroup: String?
     let isOverdue: Bool
+    /// Despatch is completed. Absent from servers before 19 Oct 2026.
+    let isComplete: Bool?
     let dataSource: JobDataSource
     let isStale: Bool
 

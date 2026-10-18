@@ -19,6 +19,7 @@ struct ReportingView: View {
         case .today: "today"
         case .thisWeek: "this week"
         case .thisMonth: "this month"
+        case .allTime: "all time"
         }
     }
 
@@ -124,6 +125,7 @@ extension ReportingPeriod {
         case .today: "Today"
         case .thisWeek: "This week"
         case .thisMonth: "This month"
+        case .allTime: "All time"
         }
     }
 }

@@ -103,16 +103,150 @@ final class JobConsignmentViewModel: ObservableObject {
     }
 }
 
-struct JobConsignmentSection: View {
-    @StateObject private var viewModel: JobConsignmentViewModel
-    @State private var confirmingFinish: CourierConsignment?
-    /// Raising one is hidden behind a disclosure until asked for — most visits
-    /// to this screen are not about starting a courier shipment.
-    @State private var isRaising = false
+// MARK: - One model for the page
+//
+// The quick action at the top of the job page and the section further down
+// show the same consignments, so they share one view model: raising one at
+// the top shows in the section straight away.
 
-    init(jobId: String) {
+/// Owns the job's consignment model and hands it to everything below.
+/// Keyed on the job, so a page reused for another job starts afresh.
+struct JobConsignmentScope<Content: View>: View {
+    @StateObject private var viewModel: JobConsignmentViewModel
+    @ViewBuilder var content: () -> Content
+
+    init(jobId: String, @ViewBuilder content: @escaping () -> Content) {
         _viewModel = StateObject(wrappedValue: JobConsignmentViewModel(jobId: jobId))
+        self.content = content
     }
+
+    var body: some View {
+        content()
+            .environmentObject(viewModel)
+            .task { await viewModel.load() }
+    }
+}
+
+// MARK: - Quick action, near the top
+
+/// "Raise courier consignment", as a button you can't miss, under the step
+/// action. Once one is open it becomes "Pack boxes", straight to its boxes.
+struct CourierQuickAction: View {
+    @EnvironmentObject private var viewModel: JobConsignmentViewModel
+    @State private var showingRaise = false
+    @State private var packing: ManualManifest?
+
+    var body: some View {
+        Group {
+            if let open = viewModel.openConsignment {
+                VStack(alignment: .leading, spacing: PaperSpace.xs) {
+                    Button {
+                        packing = open.manualManifest(jobId: viewModel.jobId)
+                    } label: {
+                        Label { Text("Pack boxes") } icon: { PaperIcon(.box, size: 18, color: PaperColor.paper) }
+                    }
+                    .buttonStyle(.paperPill(.ink, .large, fullWidth: true))
+                    Text("\(open.manifestName)\(open.courier.map { " · \($0)" } ?? "") is open")
+                        .paperType(.footnote)
+                        .foregroundStyle(PaperColor.secondary)
+                        .lineLimit(1)
+                }
+            } else if viewModel.info != nil {
+                Button {
+                    showingRaise = true
+                } label: {
+                    Label { Text("Raise courier consignment") } icon: { PaperIcon(.truck, size: 18) }
+                }
+                .buttonStyle(.paperPill(.outline, .large, fullWidth: true))
+            }
+        }
+        .sheet(isPresented: $showingRaise) {
+            RaiseConsignmentSheet { created in
+                showingRaise = false
+                // Straight on to packing it.
+                if created { packing = viewModel.openConsignment?.manualManifest(jobId: viewModel.jobId) }
+            }
+            .environmentObject(viewModel)
+            .paperSheet(detents: [.medium, .large])
+        }
+        .navigationDestination(item: $packing) { manifest in
+            ManualManifestScreen(manifest: manifest, backLabel: "Job")
+        }
+    }
+}
+
+// MARK: - Raise sheet
+
+struct RaiseConsignmentSheet: View {
+    @EnvironmentObject private var viewModel: JobConsignmentViewModel
+    /// Called with true once a consignment has been raised.
+    let onDone: (Bool) -> Void
+
+    private var canRaise: Bool {
+        !viewModel.isWorking && !viewModel.name.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    var body: some View {
+        SheetScreen("Courier consignment") {
+            VStack(alignment: .leading, spacing: PaperSpace.xl) {
+                // Named after the customer and their order, because that is
+                // how these get searched for afterwards.
+                PaperUnderlineField("Consignment name", text: $viewModel.name)
+                    .autocorrectionDisabled()
+                    .padding(.top, PaperSpace.l)
+
+                VStack(alignment: .leading, spacing: PaperSpace.s) {
+                    PaperLabel("Courier")
+                    PaperChips(viewModel.couriers, label: { $0 }, isSelected: { $0 == viewModel.courier }) { option in
+                        viewModel.courier = viewModel.courier == option ? "" : option
+                    }
+                }
+
+                if let open = viewModel.openConsignment {
+                    // A job can legitimately ship in two parts, so this warns
+                    // rather than blocks — but nobody should raise a second by
+                    // accident.
+                    Notice(
+                        text: "\u{201C}\(open.manifestName)\u{201D} is already open for this job. Raising another is fine if it's shipping in two parts.",
+                        tone: .soon
+                    )
+                }
+
+                if let error = viewModel.errorMessage {
+                    Notice(text: error, tone: .held)
+                }
+
+                Button {
+                    Task {
+                        await viewModel.create()
+                        if viewModel.errorMessage == nil { onDone(true) }
+                    }
+                } label: {
+                    if viewModel.isWorking {
+                        ProgressView().tint(PaperColor.onAccent)
+                    } else {
+                        Text("Raise and start packing")
+                    }
+                }
+                .buttonStyle(.paperPill(.accent, .floor, fullWidth: true))
+                .disabled(!canRaise)
+
+                Text(viewModel.canCompleteSteps
+                     ? "Finishing it later completes Pack & Wrap and then Despatch in ShopVOX."
+                     : "Boxes are packed against it in the Packing tab.")
+                    .paperType(.footnote)
+                    .foregroundStyle(PaperColor.tertiary)
+            }
+        }
+    }
+}
+
+// MARK: - The section, further down
+
+struct JobConsignmentSection: View {
+    @EnvironmentObject private var viewModel: JobConsignmentViewModel
+    @State private var confirmingFinish: CourierConsignment?
+    @State private var showingRaise = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -127,18 +261,20 @@ struct JobConsignmentSection: View {
                 )
             }
 
-            if isRaising {
-                raiseForm.padding(.top, PaperSpace.l)
-            } else {
-                Button(viewModel.existing.isEmpty ? "Raise a courier consignment" : "Raise another consignment") {
-                    isRaising = true
-                }
-                .buttonStyle(.paperText(PaperColor.ink, .subhead, weight: .semibold))
-                .disabled(viewModel.isLoading)
-                .padding(.top, PaperSpace.xs)
+            if viewModel.existing.isEmpty, viewModel.info != nil {
+                Text("None yet. Raise one from the button at the top of the page.")
+                    .paperType(.subhead)
+                    .foregroundStyle(PaperColor.secondary)
+                    .padding(.vertical, PaperSpace.s)
+            } else if !viewModel.existing.isEmpty {
+                // A second one, for a job shipping in two parts.
+                Button("Raise another consignment") { showingRaise = true }
+                    .buttonStyle(.paperText(PaperColor.ink, .subhead, weight: .semibold))
+                    .disabled(viewModel.isLoading)
+                    .padding(.top, PaperSpace.xs)
             }
 
-            if let error = viewModel.errorMessage {
+            if let error = viewModel.errorMessage, !showingRaise {
                 Notice(text: error, tone: .soon).padding(.top, PaperSpace.m)
             }
 
@@ -149,7 +285,11 @@ struct JobConsignmentSection: View {
 
             footerText.padding(.top, PaperSpace.m)
         }
-        .task { await viewModel.load() }
+        .sheet(isPresented: $showingRaise) {
+            RaiseConsignmentSheet { _ in showingRaise = false }
+                .environmentObject(viewModel)
+                .paperSheet(detents: [.medium, .large])
+        }
         .confirmationDialog(
             "Finish this consignment?",
             isPresented: Binding(
@@ -173,52 +313,6 @@ struct JobConsignmentSection: View {
         }
     }
 
-    private var raiseForm: some View {
-        VStack(alignment: .leading, spacing: PaperSpace.xl) {
-            // Named after the customer and their order, because that is how
-            // these get searched for afterwards.
-            PaperUnderlineField("Consignment name", text: $viewModel.name)
-                .autocorrectionDisabled()
-
-            VStack(alignment: .leading, spacing: PaperSpace.s) {
-                PaperLabel("Courier")
-                PaperChips(viewModel.couriers, label: { $0 }, isSelected: { $0 == viewModel.courier }) { option in
-                    viewModel.courier = viewModel.courier == option ? "" : option
-                }
-            }
-
-            if let open = viewModel.openConsignment {
-                // A job can legitimately ship in two parts, so this warns
-                // rather than blocks — but nobody should raise a second by
-                // accident.
-                Notice(
-                    text: "\u{201C}\(open.manifestName)\u{201D} is already open for this job. Raising another is fine if it's shipping in two parts.",
-                    tone: .soon
-                )
-            }
-
-            HStack(spacing: PaperSpace.m) {
-                Button {
-                    Task {
-                        await viewModel.create()
-                        if viewModel.errorMessage == nil { isRaising = false }
-                    }
-                } label: {
-                    if viewModel.isWorking {
-                        ProgressView().tint(PaperColor.paper)
-                    } else {
-                        Text("Raise consignment")
-                    }
-                }
-                .buttonStyle(.paperPill(.ink, .regular))
-                .disabled(viewModel.isWorking || viewModel.name.trimmingCharacters(in: .whitespaces).isEmpty)
-
-                Button("Cancel") { isRaising = false }
-                    .buttonStyle(.paperText(PaperColor.secondary, .subhead))
-            }
-        }
-    }
-
     private var footerText: some View {
         VStack(alignment: .leading, spacing: PaperSpace.xs) {
             Text("Boxes are packed against the consignment in the Packing tab.")
@@ -234,6 +328,27 @@ struct JobConsignmentSection: View {
     }
 }
 
+extension CourierConsignment {
+    /// The consignment as the Packing tab knows it, linked to its job so
+    /// finishing it there moves the job on too.
+    func manualManifest(jobId: String) -> ManualManifest {
+        let created = createdAt.flatMap {
+            ISO8601DateFormatter.withFractions.date(from: $0) ?? ISO8601DateFormatter().date(from: $0)
+        } ?? Date()
+        var m = ManualManifest(
+            id: id,
+            manifestName: manifestName,
+            courier: courier,
+            status: isOpen ? .open : .finished,
+            note: nil,
+            createdAt: created,
+            updatedAt: created
+        )
+        m.jobIndexId = jobId
+        return m
+    }
+}
+
 // MARK: - Rows
 
 private struct CourierConsignmentRow: View {
@@ -242,24 +357,7 @@ private struct CourierConsignmentRow: View {
     let isWorking: Bool
     let finish: () -> Void
 
-    /// The consignment as the Packing tab knows it, linked to this job so
-    /// finishing it there moves the job on too.
-    private var manifest: ManualManifest {
-        let created = consignment.createdAt.flatMap {
-            ISO8601DateFormatter.withFractions.date(from: $0) ?? ISO8601DateFormatter().date(from: $0)
-        } ?? Date()
-        var m = ManualManifest(
-            id: consignment.id,
-            manifestName: consignment.manifestName,
-            courier: consignment.courier,
-            status: consignment.isOpen ? .open : .finished,
-            note: nil,
-            createdAt: created,
-            updatedAt: created
-        )
-        m.jobIndexId = jobId
-        return m
-    }
+    private var manifest: ManualManifest { consignment.manualManifest(jobId: jobId) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: PaperSpace.s) {

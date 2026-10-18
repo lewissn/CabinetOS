@@ -91,7 +91,8 @@ struct JobDetailView: View {
         let focusIndex = focus.flatMap { f in detail.steps.firstIndex { $0.id == f.id } }
         let everythingDone = detail.focusStep?.isEverythingDone ?? detail.steps.allSatisfy(\.isComplete)
 
-        return VStack(alignment: .leading, spacing: 0) {
+        return JobConsignmentScope(jobId: jobId) {
+        VStack(alignment: .leading, spacing: 0) {
             header(detail, focus: focus, focusIndex: focusIndex, everythingDone: everythingDone)
 
             if !detail.steps.isEmpty {
@@ -112,6 +113,9 @@ struct JobDetailView: View {
                 .section(top: PaperSpace.xxl)
             }
 
+            // Easy to find: under the step button, not halfway down the page.
+            CourierQuickAction().section(top: PaperSpace.l)
+
             proofSection(detail.proof).section()
 
             if !detail.dates.isEmpty { datesSection(detail.dates).section() }
@@ -125,7 +129,7 @@ struct JobDetailView: View {
             // Directly under the workflow facts, because raising one and
             // finishing one are both workflow actions — finishing completes two
             // steps.
-            JobConsignmentSection(jobId: jobId).section()
+            JobConsignmentSection().section()
 
             if !detail.steps.isEmpty {
                 stepsSection(detail.steps, capabilities: detail.workflowCapabilities).section()
@@ -139,6 +143,8 @@ struct JobDetailView: View {
 
             provenanceSection(detail).section()
         }
+        }
+        .id(jobId)
     }
 
     // MARK: Header: refs, customer, title, one status line

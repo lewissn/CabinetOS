@@ -119,7 +119,14 @@ final class ReportingService {
             avgMinutes = completionTimes.reduce(0, +) / Double(completionTimes.count)
         }
 
-        let itemsPerDay = Double(panels.count) / Double(period.workingDays)
+        // All time counts days from the first scan, not from the range's start.
+        let days: Int
+        if period == .allTime, let first = panels.first.flatMap({ Self.parseISO($0.scannedAt) }) {
+            days = ReportingPeriod.workingDays(from: Calendar.london.startOfDay(for: first), to: period.dateRange().end)
+        } else {
+            days = period.workingDays
+        }
+        let itemsPerDay = Double(panels.count) / Double(days)
 
         return PackingSpeedStats(
             averageCompletionMinutes: avgMinutes,
@@ -236,16 +243,54 @@ final class ReportingService {
     /// was quietly short. Pages are requested until one comes back short.
     private func supabaseGetAll<Row: Decodable>(_ urlString: String) async throws -> [Row] {
         let pageSize = 1000
-        var rows: [Row] = []
-        var offset = 0
-        while true {
-            let page: [Row] = try await supabaseGet(urlString + "&limit=\(pageSize)&offset=\(offset)")
-            rows.append(contentsOf: page)
-            if page.count < pageSize { return rows }
-            offset += pageSize
-            // A runaway guard: 200,000 rows is far past any period here.
-            if offset >= 200 * pageSize { return rows }
+        // The first page also asks for the total, so the rest (All time is
+        // 20,000+ scans) can be fetched at once rather than one after another.
+        let (first, total): ([Row], Int?) = try await supabaseGetCounted(urlString + "&limit=\(pageSize)&offset=0")
+        guard first.count == pageSize else { return first }
+        // A runaway guard: 200,000 rows is far past any period here.
+        let pages = min(((total ?? (pageSize * 2)) + pageSize - 1) / pageSize, 200)
+        guard pages > 1 else { return first }
+
+        var byOffset: [Int: [Row]] = [0: first]
+        try await withThrowingTaskGroup(of: (Int, [Row]).self) { group in
+            for page in 1..<pages {
+                let offset = page * pageSize
+                group.addTask {
+                    (offset, try await self.supabaseGet(urlString + "&limit=\(pageSize)&offset=\(offset)"))
+                }
+            }
+            for try await (offset, rows) in group { byOffset[offset] = rows }
         }
+        var rows = byOffset.keys.sorted().flatMap { byOffset[$0] ?? [] }
+        // Without a total, keep going until a short page.
+        if total == nil, (byOffset[(pages - 1) * pageSize]?.count ?? 0) == pageSize {
+            var offset = pages * pageSize
+            while offset < 200 * pageSize {
+                let page: [Row] = try await supabaseGet(urlString + "&limit=\(pageSize)&offset=\(offset)")
+                rows.append(contentsOf: page)
+                if page.count < pageSize { break }
+                offset += pageSize
+            }
+        }
+        return rows
+    }
+
+    /// One page, plus the total row count from Content-Range ("0-999/20710").
+    private func supabaseGetCounted<Row: Decodable>(_ urlString: String) async throws -> ([Row], Int?) {
+        guard let url = URL(string: urlString) else { throw ReportingError.badURL }
+        var request = URLRequest(url: url)
+        request.setValue(Configuration.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(Configuration.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("count=exact", forHTTPHeaderField: "Prefer")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw ReportingError.httpError(code, detail: Self.describe(data))
+        }
+        let total = (http.value(forHTTPHeaderField: "Content-Range")?.split(separator: "/").last).flatMap { Int($0) }
+        return (try JSONDecoder().decode([Row].self, from: data), total)
     }
 
     private func supabaseGet<T: Decodable>(_ urlString: String) async throws -> T {
