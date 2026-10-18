@@ -124,6 +124,9 @@ struct JobConsignmentScope<Content: View>: View {
         content()
             .environmentObject(viewModel)
             .task { await viewModel.load() }
+            .onReceive(NotificationCenter.default.publisher(for: .courierConsignmentsChanged)) { _ in
+                Task { await viewModel.load() }
+            }
     }
 }
 

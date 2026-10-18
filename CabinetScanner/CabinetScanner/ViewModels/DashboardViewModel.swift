@@ -9,12 +9,14 @@ enum TileDetail: Identifiable {
     case dueToday
     case dueTomorrow
     case courierGroup(CourierGroup)
+    case day(DayLoad)
 
     var id: String {
         switch self {
         case .dueToday:              return "dueToday"
         case .dueTomorrow:           return "dueTomorrow"
         case .courierGroup(let g):   return "courier-\(g.shippingMethod)"
+        case .day(let d):            return "day-\(d.date.timeIntervalSince1970)"
         }
     }
 
@@ -23,6 +25,7 @@ enum TileDetail: Identifiable {
         case .dueToday:              return "Due Today"
         case .dueTomorrow:           return "Due Tomorrow"
         case .courierGroup(let g):   return g.shippingMethod
+        case .day:                   return "Due"
         }
     }
 
@@ -31,6 +34,7 @@ enum TileDetail: Identifiable {
         case .dueToday:      return .blue
         case .dueTomorrow:   return .orange
         case .courierGroup:  return .blue
+        case .day:           return .blue
         }
     }
 }
@@ -99,6 +103,9 @@ final class DashboardViewModel: ObservableObject {
                 result.append(GroupedSection(title: "Due Tomorrow", jobs: group.tomorrowJobs.sorted { ($0.stage, $0.customer) < ($1.stage, $1.customer) }))
             }
             return result
+
+        case .day(let day):
+            return groupedByMethod(day.jobs)
         }
     }
 

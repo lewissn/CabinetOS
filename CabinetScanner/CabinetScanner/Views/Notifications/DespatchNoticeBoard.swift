@@ -3,12 +3,12 @@ import SwiftUI
 
 // MARK: - Today's alerts
 //
-// The unread despatch changes, on the screen the bench already has open.
+// Only the date changes that alter today's or tomorrow's work: a job moved
+// into either day, or moved out of one. ShopVOX moves dates constantly, and
+// the rest are news the bell and the toast already carry, so they stay
+// behind the bell rather than on the bench's screen.
 //
-// Deliberately not a full list. It shows the three that matter most — dates
-// brought forward first, then most recent — and a way through to the rest. A
-// dashboard section that grows without limit stops being read, and the whole
-// point is that the top item is seen.
+// At most three, each dismissable, with a way through to the full list.
 
 struct DespatchNoticeBoard: View {
     @ObservedObject private var service = NotificationService.shared
@@ -16,29 +16,19 @@ struct DespatchNoticeBoard: View {
 
     private let maximumShown = 3
 
-    /// Only dates brought forward are put in front of the bench. ShopVOX moves
-    /// due dates constantly; a postponement or a date first set can wait in
-    /// the full list behind the bell.
-    private var urgent: [AppNotification] {
-        service.noticeBoard.filter(\.isUrgent)
+    /// Brought forward first (the server's own ranking), then most recent.
+    private var relevant: [AppNotification] {
+        service.noticeBoard.filter { $0.touchesTodayOrTomorrow() }
     }
 
-    private var shown: [AppNotification] { Array(urgent.prefix(maximumShown)) }
-
-    /// Unread changes that aren't urgent, summed into one line.
-    private var quietCount: Int { service.unreadCount - urgent.count }
+    private var shown: [AppNotification] { Array(relevant.prefix(maximumShown)) }
 
     var body: some View {
-        if !shown.isEmpty || quietCount > 0 {
+        if !shown.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
-                PaperSectionHeader("Alerts") {
-                    HStack(spacing: PaperSpace.l) {
-                        Button("Clear") { Task { await service.markAllRead() } }
-                            .buttonStyle(.paperText(PaperColor.secondary, .footnote))
-                            .accessibilityLabel("Mark every despatch alert read")
-                        Button("See all") { showingAll = true }
-                            .buttonStyle(.paperText(PaperColor.secondary, .footnote))
-                    }
+                PaperSectionHeader("Date changes for today and tomorrow") {
+                    Button("See all") { showingAll = true }
+                        .buttonStyle(.paperText(PaperColor.secondary, .footnote))
                 }
 
                 ForEach(shown) { notification in
@@ -60,29 +50,9 @@ struct DespatchNoticeBoard: View {
                     .transition(.opacity)
                 }
 
-                if urgent.count > shown.count {
-                    Button("\(urgent.count - shown.count) more brought forward") { showingAll = true }
+                if relevant.count > shown.count {
+                    Button("\(relevant.count - shown.count) more") { showingAll = true }
                         .buttonStyle(.paperText(PaperColor.secondary, .footnote))
-                }
-
-                if quietCount > 0 {
-                    Button {
-                        showingAll = true
-                    } label: {
-                        HStack(spacing: PaperSpace.s) {
-                            Circle().fill(Tone.neutral.color).frame(width: 7, height: 7)
-                            Text(shown.isEmpty
-                                 ? "\(Format.count(quietCount, "date change")), none brought forward"
-                                 : "\(Format.count(quietCount, "other date change"))")
-                                .paperType(.subhead, numeric: true)
-                                .foregroundStyle(PaperColor.secondary)
-                            Spacer(minLength: 0)
-                            PaperIcon(.chevronRight, size: 14, color: PaperColor.faint)
-                        }
-                        .frame(minHeight: PaperSpace.tap)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
                 }
             }
             .animation(PaperMotion.fade, value: shown.map(\.id))

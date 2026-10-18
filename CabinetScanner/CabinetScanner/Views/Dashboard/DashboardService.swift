@@ -15,11 +15,25 @@ struct DispatchIntelligence {
     let inHouseJobs: [DispatchJob]
     let todayJobs: [DispatchJob]
     let tomorrowJobs: [DispatchJob]
+    /// The next five working days from today, for the "Coming up" chart.
+    var workingDays: [DayLoad] = []
 
     static let empty = DispatchIntelligence(
         dueToday: 0, dueTomorrow: 0, courierGroups: [], inHouseJobs: [],
         todayJobs: [], tomorrowJobs: []
     )
+}
+
+/// Everything due out on one day.
+struct DayLoad: Identifiable {
+    var id: Date { date }
+    let date: Date
+    let jobs: [DispatchJob]
+
+    var total: Int { jobs.count }
+    /// Packed or despatched: ready to go or gone.
+    var ready: Int { jobs.filter { $0.stage >= .packed }.count }
+    var packing: Int { jobs.filter { $0.stage == .packing }.count }
 }
 
 struct CourierGroup: Identifiable {
@@ -65,7 +79,9 @@ enum DispatchStage: Int, Comparable {
         case "Pack & Wrap":
             switch status {
             case "completed": self = .packed
-            case "started", "paused", "idling", "stopped": self = .packing
+            // "idling" is a step waiting to be started: on 19 Oct 2026 every
+            // Pack & Wrap job not completed was idling, none started.
+            case "started", "paused", "stopped": self = .packing
             default: self = .toPack
             }
         default:
@@ -95,6 +111,8 @@ extension Calendar {
 
 final class DashboardService {
 
+    static let workingDaysShown = 5
+
     private static let inHouseKeywords = ["in-house", "in house", "inhouse"]
 
     static func isInHouse(_ method: String?) -> Bool {
@@ -110,7 +128,18 @@ final class DashboardService {
               let tomorrowEnd   = cal.date(byAdding: .day, value: 2, to: todayStart)
         else { return .empty }
 
-        let rows = try await fetchJobs(from: todayStart, before: tomorrowEnd)
+        // Five working days, Monday to Friday, starting today when today is
+        // one. The same rows give today and tomorrow.
+        var days: [Date] = []
+        var cursor = todayStart
+        while days.count < Self.workingDaysShown {
+            if !cal.isDateInWeekend(cursor) { days.append(cursor) }
+            cursor = cal.date(byAdding: .day, value: 1, to: cursor)!
+        }
+        let fetchEnd = max(tomorrowEnd, cal.date(byAdding: .day, value: 1, to: days.last!)!)
+
+        let rows = try await fetchJobs(from: todayStart, before: fetchEnd)
+        var jobsByDay: [Date: [DispatchJob]] = [:]
 
         var dueToday = 0
         var dueTomorrow = 0
@@ -140,6 +169,8 @@ final class DashboardService {
                 shippingMethod: method,
                 stage: DispatchStage(step: row.workflowStep, status: row.workflowStatus)
             )
+
+            jobsByDay[dayStart, default: []].append(job)
 
             if isToday {
                 dueToday += 1
@@ -191,7 +222,8 @@ final class DashboardService {
             courierGroups: courierGroups,
             inHouseJobs: inHouseJobs,
             todayJobs: allTodayJobs,
-            tomorrowJobs: allTomorrowJobs
+            tomorrowJobs: allTomorrowJobs,
+            workingDays: days.map { DayLoad(date: $0, jobs: jobsByDay[$0] ?? []) }
         )
     }
 

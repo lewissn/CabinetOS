@@ -9,6 +9,8 @@ struct ManualManifestDetailView: View {
     @State private var boxToDelete: ManualManifestBox?
     @State private var showFinishConfirm = false
     @State private var showReopenConfirm = false
+    @State private var showDeleteConfirm = false
+    @Environment(\.dismiss) private var dismiss
 
     private var manifest: ManualManifest { viewModel.manifest }
 
@@ -119,6 +121,16 @@ struct ManualManifestDetailView: View {
                 Text("This locks the manifest. You can reopen it later if needed.")
             }
         }
+        .alert("Delete \(manifest.manifestName)?", isPresented: $showDeleteConfirm) {
+            Button("Keep consignment", role: .cancel) {}
+            Button("Delete consignment", role: .destructive) {
+                Task {
+                    if await viewModel.deleteManifest() { dismiss() }
+                }
+            }
+        } message: {
+            Text(deleteMessage)
+        }
         .alert("Reopen this manifest?", isPresented: $showReopenConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Reopen manifest") {
@@ -168,8 +180,43 @@ struct ManualManifestDetailView: View {
         }
     }
 
+    /// Says what goes with it, and what deleting can't take back.
+    private var deleteMessage: String {
+        var parts = [viewModel.boxes.isEmpty
+            ? "The consignment is deleted."
+            : "The consignment and its \(Format.count(viewModel.boxes.count, "box", "boxes")) are deleted, with everything in them."]
+        if manifest.stepsCompletedAt != nil {
+            parts.append("The steps it completed in ShopVOX stay completed.")
+        }
+        parts.append("This can't be undone.")
+        return parts.joined(separator: " ")
+    }
+
+    private var deleteButton: some View {
+        Button(role: .destructive) {
+            showDeleteConfirm = true
+        } label: {
+            if viewModel.isDeleting {
+                ProgressView().tint(PaperColor.danger)
+            } else {
+                Text("Delete consignment")
+            }
+        }
+        .buttonStyle(.paperText(PaperColor.danger, .subhead, weight: .medium))
+        .disabled(viewModel.isDeleting || viewModel.isFinishing)
+        .padding(.top, PaperSpace.l)
+    }
+
     @ViewBuilder
     private var actions: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            actionButtons
+            deleteButton
+        }
+    }
+
+    @ViewBuilder
+    private var actionButtons: some View {
         if manifest.isFinished {
             VStack(spacing: PaperSpace.s) {
                 Button("View summary") { viewModel.showSummary = true }

@@ -44,6 +44,9 @@ struct CourierManifestList: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .courierConsignmentsChanged)) { _ in
+            Task { await viewModel.loadManifests() }
+        }
     }
 
     private func header(_ title: String) -> some View {

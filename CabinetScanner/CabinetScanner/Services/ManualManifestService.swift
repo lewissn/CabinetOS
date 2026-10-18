@@ -2,6 +2,11 @@ import Foundation
 
 // MARK: - Supabase CRUD for manual_manifests, manual_manifest_boxes, manual_manifest_items
 
+extension Notification.Name {
+    /// A courier consignment was deleted. Lists of them reload.
+    static let courierConsignmentsChanged = Notification.Name("courierConsignmentsChanged")
+}
+
 final class ManualManifestService {
 
     // MARK: - Manifests
@@ -50,6 +55,19 @@ final class ManualManifestService {
             filter: "id=eq.\(id)",
             body: body
         )
+    }
+
+    /// Delete a consignment with its boxes and their items, children first.
+    /// The tables cascade, but this doesn't rely on it: it is the same order
+    /// `deleteBox` uses, and a half-done delete leaves fewer orphans this way.
+    func deleteManifest(id: String) async throws {
+        let boxes = try await fetchBoxes(manifestId: id)
+        if !boxes.isEmpty {
+            let ids = boxes.map(\.id).joined(separator: ",")
+            try await supabaseDelete(table: "manual_manifest_items", filter: "box_id=in.(\(ids))")
+            try await supabaseDelete(table: "manual_manifest_boxes", filter: "manifest_id=eq.\(id)")
+        }
+        try await supabaseDelete(table: "manual_manifests", filter: "id=eq.\(id)")
     }
 
     // MARK: - Boxes

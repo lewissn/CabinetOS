@@ -59,6 +59,26 @@ final class ManualManifestDetailViewModel: ObservableObject {
         }
     }
 
+    @Published var isDeleting = false
+
+    /// Delete this consignment, its boxes and their items. Returns true once
+    /// it's gone, so the screen can close.
+    func deleteManifest() async -> Bool {
+        guard !isDeleting else { return false }
+        isDeleting = true
+        defer { isDeleting = false }
+        do {
+            try await service.deleteManifest(id: manifest.id)
+            HapticService.success()
+            NotificationCenter.default.post(name: .courierConsignmentsChanged, object: manifest.id)
+            return true
+        } catch {
+            errorMessage = "The consignment wasn't deleted: \(error.localizedDescription)"
+            HapticService.error()
+            return false
+        }
+    }
+
     /// Finish the consignment.
     ///
     /// One raised from a job page goes through Ops, which closes it and then

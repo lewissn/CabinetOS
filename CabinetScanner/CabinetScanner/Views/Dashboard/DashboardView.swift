@@ -13,7 +13,6 @@ import SwiftUI
 
 struct DashboardView: View {
     @StateObject private var vm = DashboardViewModel()
-    @StateObject private var apcVM = APCDeadlineViewModel()
     @StateObject private var week = WeekFigures()
     @ObservedObject private var notifications = NotificationService.shared
     @StateObject private var search = JobSearchViewModel()
@@ -76,29 +75,16 @@ struct DashboardView: View {
                 )
             }
             .refreshable { await refreshAll() }
-            .task {
-                await refreshAll()
-                apcVM.startCountdown()
-            }
+            .task { await refreshAll() }
             // Every tab is alive from launch: coming back to Today is when it
             // reloads, and the countdown only runs while it's on screen.
-            .onTabActiveChange { active in
-                if active {
-                    apcVM.startCountdown()
-                    Task { await refreshAll() }
-                } else {
-                    apcVM.stopCountdown()
-                }
-            }
+            .onTabReturn { await refreshAll() }
             .onResume { await refreshAll() }
             .onChange(of: vm.state) { _, state in
                 if state == .loaded { hasLoaded = true }
             }
             .sheet(isPresented: $showingNotifications) {
                 NotificationsView().paperSheet()
-            }
-            .onDisappear {
-                apcVM.stopCountdown()
             }
             .sheet(item: $vm.selectedTile) { detail in
                 TileDetailSheet(detail: detail, sections: vm.sections(for: detail))
@@ -119,7 +105,6 @@ struct DashboardView: View {
 
     private func refreshAll() async {
         await vm.refresh()
-        await apcVM.refresh()
         await notifications.refresh()
         await week.load(deviceId: appState.deviceId)
     }
@@ -159,50 +144,65 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var dashboardContent: some View {
-        if apcVM.shouldShow {
-            APCDeadlineBannerView(viewModel: apcVM).section(top: PaperSpace.xxl)
+        TodayStatusStrip(
+            intelligence: vm.intelligence,
+            isLoaded: showsDispatch,
+            onToday: { vm.selectedTile = .dueToday },
+            onAPC: { vm.selectedTile = .courierGroup($0) },
+            onTomorrow: { vm.selectedTile = .dueTomorrow }
+        )
+        .padding(.top, PaperSpace.l)
+
+        if case .error(let message) = vm.state {
+            PaperEmptyState("Today's despatch didn't load", message: message, actionTitle: "Try again") {
+                Task { await vm.refresh() }
+            }
+            .section(top: PaperSpace.xxl)
         }
 
-        // Above the numbers on purpose. A despatch date that has moved
-        // changes what the numbers mean, so it has to be read first.
+        todayProgress
+
+        // Only changes that move a job into or out of today or tomorrow; the
+        // rest are behind the bell.
         DespatchNoticeBoard(showingAll: $showingNotifications).section()
 
-        summary.section()
-
+        comingUp
         leaving.section()
         inHouseLoading
         thisWeek.section()
     }
 
-    // MARK: Summary: the number that matters
+    // MARK: Today's despatch, by stage
 
     @ViewBuilder
-    private var summary: some View {
-        switch vm.state {
-        case .loading where !hasLoaded:
-            Headline(value: "–", unit: "jobs due out today", detail: "Loading")
-        case .error(let message):
-            PaperEmptyState("Today's despatch didn't load", message: message, actionTitle: "Try again") {
-                Task { await vm.refresh() }
-            }
-        default:
-            let today = vm.intelligence.todayJobs
-            let toGo = today.filter { $0.stage != .despatched }.count
-            VStack(alignment: .leading, spacing: PaperSpace.l) {
-                Button { vm.selectedTile = .dueToday } label: {
-                    Headline(
-                        value: PaperFormat.int(toGo),
-                        unit: toGo == 1 ? "job still to go out today" : "jobs still to go out today",
-                        detail: "\(PaperFormat.int(today.count)) due today · \(PaperFormat.int(vm.intelligence.dueTomorrow)) tomorrow"
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+    private var todayProgress: some View {
+        let today = vm.intelligence.todayJobs
+        if showsDispatch && !today.isEmpty {
+            VStack(alignment: .leading, spacing: PaperSpace.m) {
+                PaperSectionHeader("Today's despatch") {
+                    Button("Jobs") { vm.selectedTile = .dueToday }
+                        .buttonStyle(.paperText(PaperColor.secondary, .footnote))
                 }
-                .buttonStyle(.plain)
-                .accessibilityHint("Shows the jobs due today")
-
-                if !today.isEmpty { StageSummary(jobs: today) }
+                StageSummary(jobs: today)
             }
+            .section()
+        }
+    }
+
+    // MARK: Coming up
+
+    @ViewBuilder
+    private var comingUp: some View {
+        if showsDispatch && !vm.intelligence.workingDays.isEmpty {
+            VStack(alignment: .leading, spacing: PaperSpace.l) {
+                PaperSectionHeader("Next \(DashboardService.workingDaysShown) working days") {
+                    Text(Format.count(vm.intelligence.workingDays.reduce(0) { $0 + $1.total }, "job"))
+                        .paperType(.footnote, numeric: true)
+                        .foregroundStyle(PaperColor.tertiary)
+                }
+                ComingUpChart(days: vm.intelligence.workingDays) { vm.selectedTile = .day($0) }
+            }
+            .section()
         }
     }
 
@@ -457,6 +457,7 @@ private struct TileDetailSheet: View {
         case .dueToday: "Due today"
         case .dueTomorrow: "Due tomorrow"
         case .courierGroup(let g): g.shippingMethod
+        case .day(let d): "Due \(Format.day(d.date))"
         }
     }
 
