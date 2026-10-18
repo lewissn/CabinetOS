@@ -145,11 +145,11 @@ struct JobsHubView: View {
 /// A job reached by id alone — a scanned label, or a tapped notification.
 /// Distinct from `JobSearchResult` and `ProductionJob` so the stack can tell
 /// the three apart.
-private struct LinkedJob: Hashable {
+struct LinkedJob: Hashable {
     let id: String
 }
 
 /// A job reached by its sales order number, from a scanned label.
-private struct SalesOrderLookup: Hashable {
+struct SalesOrderLookup: Hashable {
     let salesOrder: String
 }

@@ -23,6 +23,10 @@ struct DashboardView: View {
     /// Once the dispatch figures have loaded, a refresh keeps showing them
     /// rather than collapsing the page while it reloads.
     @State private var hasLoaded = false
+    /// Held explicitly so a scanned label replaces whatever is open rather
+    /// than stacking on it, as on the Jobs tab.
+    @State private var path = NavigationPath()
+    @State private var scanningLabel = false
     var switchToPackaging: () -> Void = {}
 
     /// Typing replaces the dashboard with results, exactly as it does on the
@@ -32,12 +36,15 @@ struct DashboardView: View {
     private var isSearching: Bool { !search.trimmedQuery.isEmpty }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     header
-                    PaperSearchField(text: $search.query, prompt: "Sales order, customer, Shopify number")
-                        .padding(.top, PaperSpace.l)
+                    HStack(alignment: .center, spacing: PaperSpace.s) {
+                        PaperSearchField(text: $search.query, prompt: "Order, customer, Shopify no.")
+                        ScanLabelButton { scanningLabel = true }
+                    }
+                    .padding(.top, PaperSpace.l)
 
                     if isSearching {
                         JobSearchResults(viewModel: search).padding(.top, PaperSpace.l)
@@ -52,6 +59,21 @@ struct DashboardView: View {
             .paperRootScreen()
             .navigationDestination(for: JobSearchResult.self) { result in
                 JobDetailView(jobId: result.id, knownTitle: result.displayTitle, jobTitle: result.jobTitle, backLabel: "Today")
+            }
+            .navigationDestination(for: LinkedJob.self) { linked in
+                JobDetailView(jobId: linked.id, backLabel: "Today")
+            }
+            .navigationDestination(for: SalesOrderLookup.self) { lookup in
+                JobLookupView(salesOrder: lookup.salesOrder, customer: "Sales order \(lookup.salesOrder)")
+            }
+            .fullScreenCover(isPresented: $scanningLabel) {
+                JobLabelScannerView(
+                    onFound: { target in
+                        scanningLabel = false
+                        open(target)
+                    },
+                    onCancel: { scanningLabel = false }
+                )
             }
             .refreshable { await refreshAll() }
             .task {
@@ -84,6 +106,16 @@ struct DashboardView: View {
                 TileDetailSheet(detail: detail, sections: vm.sections(for: detail))
                     .paperSheet(detents: [.medium, .large])
             }
+        }
+    }
+
+    /// Open a scanned job label here on Today, so backing out returns to it.
+    private func open(_ target: JobLabelTarget) {
+        search.clear()
+        path = NavigationPath()
+        switch target {
+        case .jobId(let id): path.append(LinkedJob(id: id))
+        case .salesOrder(let number): path.append(SalesOrderLookup(salesOrder: number))
         }
     }
 
@@ -468,5 +500,25 @@ private struct TileDetailSheet: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Scan a job label
+
+/// Sits beside the search field: the other way to find a job, by its label.
+private struct ScanLabelButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            PaperIcon(.qr, size: 22)
+                .foregroundStyle(PaperColor.ink)
+                .frame(width: 48, height: 48)
+                .background(PaperColor.surface, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(PaperColor.border, lineWidth: 1))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Scan a job label")
     }
 }
