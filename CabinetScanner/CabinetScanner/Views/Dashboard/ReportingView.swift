@@ -3,7 +3,7 @@ import SwiftUI
 
 // MARK: - Reports
 //
-// Opened as a sheet from Today. Packing figures for a period (today, this
+// Its own tab (it replaced Stock). Packing figures for a period (today, this
 // week, this month) from ReportingService. The service returns totals for
 // the period only, with no day-by-day series, so there are figures and
 // stats here rather than charts. Wrapping is shown as plain numbers: no
@@ -24,30 +24,39 @@ struct ReportingView: View {
     }
 
     var body: some View {
-        SheetScreen("Packing reports", onRefresh: { await vm.refresh() }) {
-            VStack(alignment: .leading, spacing: 0) {
-                PaperTextTabs(ReportingPeriod.allCases.map { ($0, $0.label) }, selection: $vm.selectedPeriod)
-                    .padding(.top, PaperSpace.s)
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ScreenTitle("Reports")
+                    PaperTextTabs(ReportingPeriod.allCases.map { ($0, $0.label) }, selection: $vm.selectedPeriod)
+                        .padding(.top, PaperSpace.m)
 
-                if vm.isLoading {
-                    LoadingLine("Loading the figures").section(top: PaperSpace.xxl)
-                } else if let error = vm.errorMessage {
-                    PaperEmptyState("The figures didn't load", message: error, actionTitle: "Try again") {
-                        Task { await vm.refresh() }
+                    if vm.isLoading {
+                        LoadingLine("Loading the figures").section(top: PaperSpace.xxl)
+                    } else if let error = vm.errorMessage {
+                        PaperEmptyState("The figures didn't load", message: error, actionTitle: "Try again") {
+                            Task { await vm.refresh() }
+                        }
+                        .section(top: PaperSpace.xxl)
+                    } else {
+                        completion.section(top: PaperSpace.xxl)
+                        volume.section()
+                        speed.section()
+                        wrapping.section()
                     }
-                    .section(top: PaperSpace.xxl)
-                } else {
-                    completion.section(top: PaperSpace.xxl)
-                    volume.section()
-                    speed.section()
-                    wrapping.section()
                 }
+                .screen()
+                .padding(.bottom, 120)
             }
+            .refreshable { await vm.refresh() }
+            .paperRootScreen()
         }
         .task {
             vm.deviceId = appState.deviceId
             await vm.refresh()
         }
+        // Every tab is alive from launch; coming back is when it refreshes.
+        .onTabReturn { await vm.refreshIfStale() }
     }
 
     // MARK: - Consignments finished: the headline

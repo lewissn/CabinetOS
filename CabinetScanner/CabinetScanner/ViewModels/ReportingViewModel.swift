@@ -19,14 +19,34 @@ final class ReportingViewModel: ObservableObject {
 
     private let service = ReportingService()
 
+    /// When the figures on screen were fetched, and for which period.
+    private var loadedAt: Date?
+    private var loadedPeriod: ReportingPeriod?
+
+    /// Fetch the selected period. Figures already showing for this period
+    /// stay up while they reload, rather than the page dropping to "Loading".
     func refresh() async {
-        isLoading = true
+        let period = selectedPeriod
+        if loadedPeriod != period { isLoading = true }
         errorMessage = nil
         do {
-            summary = try await service.fetchReport(for: selectedPeriod, deviceId: deviceId)
+            let result = try await service.fetchReport(for: period, deviceId: deviceId)
+            // Switched period while this was loading: that request owns the page.
+            guard period == selectedPeriod else { return }
+            summary = result
+            loadedAt = .now
+            loadedPeriod = period
         } catch {
+            guard period == selectedPeriod else { return }
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    /// Coming back to the tab: refresh only when the figures are a couple of
+    /// minutes old. All time reads every scan, so it isn't fetched on a whim.
+    func refreshIfStale() async {
+        if let loadedAt, loadedPeriod == selectedPeriod, Date.now.timeIntervalSince(loadedAt) < 120 { return }
+        await refresh()
     }
 }

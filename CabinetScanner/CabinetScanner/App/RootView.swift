@@ -15,7 +15,7 @@ enum AppTab: Int, CaseIterable {
     case dashboard
     case jobs
     case packaging
-    case stock
+    case reports
     case settings
 
     var title: String {
@@ -23,7 +23,7 @@ enum AppTab: Int, CaseIterable {
         case .dashboard: "Today"
         case .jobs: "Jobs"
         case .packaging: "Packing"
-        case .stock: "Stock"
+        case .reports: "Reports"
         case .settings: "Settings"
         }
     }
@@ -33,7 +33,7 @@ enum AppTab: Int, CaseIterable {
         case .dashboard: .today
         case .jobs: .job
         case .packaging: .box
-        case .stock: .stock
+        case .reports: .trend
         case .settings: .settings
         }
     }
@@ -58,11 +58,14 @@ struct MainTabView: View {
         VStack(spacing: 0) {
             ZStack {
                 tabContent(.dashboard) {
-                    DashboardView(switchToPackaging: { router.selectedTab = .packaging })
+                    DashboardView(switchToPackaging: { router.selectedTab = .packaging },
+                              switchToReports: { router.selectedTab = .reports })
                 }
                 tabContent(.jobs) { JobsHubView() }
                 tabContent(.packaging) { packagingTab }
-                tabContent(.stock) { StockView() }
+                // Stock was hidden on 18 Oct 2026: nobody used it. StockView is
+                // still in the project; put a tab back here to restore it.
+                tabContent(.reports) { ReportingView() }
                 tabContent(.settings) { SettingsPlaceholderView() }
             }
             .overlay(alignment: .bottom) {

@@ -19,7 +19,6 @@ struct DashboardView: View {
     @StateObject private var search = JobSearchViewModel()
     @EnvironmentObject private var appState: AppState
     @State private var showingNotifications = false
-    @State private var showingReports = false
     /// Once the dispatch figures have loaded, a refresh keeps showing them
     /// rather than collapsing the page while it reloads.
     @State private var hasLoaded = false
@@ -28,6 +27,7 @@ struct DashboardView: View {
     @State private var path = NavigationPath()
     @State private var scanningLabel = false
     var switchToPackaging: () -> Void = {}
+    var switchToReports: () -> Void = {}
 
     /// Typing replaces the dashboard with results, exactly as it does on the
     /// Jobs tab. Looking a job up is the most common reason to pick the iPad
@@ -95,9 +95,6 @@ struct DashboardView: View {
             }
             .sheet(isPresented: $showingNotifications) {
                 NotificationsView().paperSheet()
-            }
-            .sheet(isPresented: $showingReports) {
-                ReportingView().paperSheet()
             }
             .onDisappear {
                 apcVM.stopCountdown()
@@ -287,7 +284,7 @@ struct DashboardView: View {
     private var thisWeek: some View {
         VStack(alignment: .leading, spacing: PaperSpace.l) {
             PaperSectionHeader("Packing this week") {
-                Button("Reports") { showingReports = true }
+                Button("Reports") { switchToReports() }
                     .buttonStyle(.paperText(PaperColor.secondary, .footnote))
             }
             if let summary = week.summary {
