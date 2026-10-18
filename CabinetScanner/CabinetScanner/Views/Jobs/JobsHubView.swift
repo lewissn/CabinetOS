@@ -1,3 +1,4 @@
+import CabinetDesign
 import SwiftUI
 
 // MARK: - Jobs Hub
@@ -32,36 +33,44 @@ struct JobsHubView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            Group {
-                if isSearching {
-                    JobSearchResults(viewModel: search)
-                } else {
-                    ProductionBoard(viewModel: board)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ScreenTitle("Jobs")
+                    PaperSearchField(text: $search.query, prompt: "Sales order, customer, Shopify number")
+                        .padding(.top, PaperSpace.m)
+
+                    Group {
+                        if isSearching {
+                            JobSearchResults(viewModel: search)
+                        } else {
+                            ProductionBoard(viewModel: board)
+                        }
+                    }
+                    .padding(.top, PaperSpace.l)
                 }
+                .screen()
+                .padding(.bottom, 120)
             }
-            .navigationTitle(isSearching ? "Search" : "Jobs")
+            .scrollDismissesKeyboard(.immediately)
+            .refreshable {
+                if !isSearching { await board.load() }
+            }
+            .paperRootScreen()
             // No `.id()` here. Forcing a new identity does make SwiftUI
             // rebuild the screen, but it tears the old one down mid-transition
             // and the replacement came up blank. JobDetailView follows its
             // `jobId` instead — see its `.task(id:)` — so a reused screen
             // reloads for the new job on its own.
             .navigationDestination(for: JobSearchResult.self) { result in
-                JobDetailView(jobId: result.id, knownTitle: result.displayTitle)
+                JobDetailView(jobId: result.id, knownTitle: result.displayTitle, jobTitle: result.jobTitle)
             }
             .navigationDestination(for: ProductionJob.self) { job in
-                JobDetailView(jobId: job.id, knownTitle: job.displayTitle)
+                JobDetailView(jobId: job.id, knownTitle: job.displayTitle, jobTitle: job.jobTitle)
             }
             // A deep link or a tapped notification. Only an id is known.
             .navigationDestination(for: LinkedJob.self) { linked in
                 JobDetailView(jobId: linked.id)
             }
-            .searchable(
-                text: $search.query,
-                placement: .navigationBarDrawer(displayMode: .always),
-                prompt: "Sales order, customer, Shopify number…"
-            )
-            .autocorrectionDisabled()
-            .textInputAutocapitalization(.never)
             .task { await board.load() }
         }
         // Attached to the STACK, not to its root content.

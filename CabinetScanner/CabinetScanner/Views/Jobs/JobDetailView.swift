@@ -1,10 +1,11 @@
+import CabinetDesign
 import SwiftUI
 
 // MARK: - Job Detail
 //
 // Everything genuinely known about one job. Sections with nothing in them are
 // not rendered at all — the brief is explicit that a page of blank fields is
-// worse than a short page.
+// worse than a short page. Each fact is said once.
 //
 // Every section that carries ShopVOX information states its provenance, and
 // "Open in ShopVOX" is always available rather than appearing only when
@@ -13,47 +14,44 @@ import SwiftUI
 struct JobDetailView: View {
     let jobId: String
     var knownTitle: String?
+    var jobTitle: String?
 
     @StateObject private var viewModel: JobDetailViewModel
     @Environment(\.openURL) private var openURL
     @State private var showingProof = false
 
-    init(jobId: String, knownTitle: String? = nil) {
+    init(jobId: String, knownTitle: String? = nil, jobTitle: String? = nil) {
         self.jobId = jobId
         self.knownTitle = knownTitle
+        self.jobTitle = jobTitle
         _viewModel = StateObject(wrappedValue: JobDetailViewModel(jobId: jobId))
     }
 
     var body: some View {
-        Group {
-            if viewModel.isLoading && viewModel.detail == nil {
-                ProgressView("Loading job…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            } else if let error = viewModel.errorMessage, viewModel.detail == nil {
-                ContentUnavailableView {
-                    Label("Could Not Load", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(error)
-                } actions: {
-                    Button("Try Again") { Task { await viewModel.load() } }
-                        .buttonStyle(.borderedProminent)
+        PushedScreen(back: "Jobs", onRefresh: { await viewModel.load() }) {
+            Group {
+                if let detail = viewModel.detail {
+                    page(detail)
+                } else if let error = viewModel.errorMessage, !viewModel.isLoading {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if let knownTitle { title(knownTitle) }
+                        PaperEmptyState("This job didn't load", message: error, actionTitle: "Try again") {
+                            Task { await viewModel.load() }
+                        }
+                        .section(top: PaperSpace.xxl)
+                    }
+                } else {
+                    // Loading — or nothing loaded, nothing failed, nothing in
+                    // flight, which is reachable when the screen is rebuilt for
+                    // a different job. Either way: say so and get on with it.
+                    VStack(alignment: .leading, spacing: 0) {
+                        if let knownTitle { title(knownTitle) }
+                        LoadingLine("Loading the job").section(top: PaperSpace.xxl)
+                    }
                 }
-
-            } else if let detail = viewModel.detail {
-                detailList(detail)
-
-            } else {
-                // Nothing loaded, nothing failed, nothing in flight. Reachable
-                // when the screen is rebuilt for a different job, and an empty
-                // white screen is the worst possible answer — so it shows the
-                // same thing as a first load and gets on with it.
-                ProgressView("Loading job…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .screen()
         }
-        .navigationTitle(knownTitle ?? "Job")
-        .navigationBarTitleDisplayMode(.inline)
         // Keyed on the job, so a screen reused for a different one reloads
         // rather than keeping the first job's contents.
         .task(id: jobId) { await viewModel.load(jobId: jobId) }
@@ -61,13 +59,14 @@ struct JobDetailView: View {
             if let proof = viewModel.detail?.proof, !proof.isEmpty {
                 ProofViewerView(
                     jobId: jobId,
-                    jobTitle: knownTitle ?? "Job",
+                    jobTitle: knownTitle ?? viewModel.detail?.customer.name ?? "Job",
                     label: proof.displayLabel,
                     externalURL: proof.url
                 )
+                .paperSheet()
             }
         }
-        // The outcome of a workflow action, as a banner rather than an alert:
+        // The outcome of a workflow action, as a notice rather than an alert:
         // a refusal is information about the step below it, and hiding that
         // step behind a modal to read about it is the wrong way round.
         .safeAreaInset(edge: .bottom) {
@@ -77,75 +76,110 @@ struct JobDetailView: View {
         }
     }
 
-    // MARK: - Body
+    // MARK: - Page
+    //
+    // Ordered for the people who actually open this screen: packaging and
+    // post-production, standing at a bench with a job in front of them. They
+    // are here to move the step on, look at the proof, and read the order
+    // details — so those come first, and everything that answers "whose job is
+    // this and where did it come from" comes after.
 
-    private func detailList(_ detail: JobDetail) -> some View {
-        // Ordered for the people who actually open this screen: packaging and
-        // post-production, standing at a bench with a job in front of them.
-        // They are here to move the step on, look at the proof, and read the
-        // order details — so those come first, and everything that answers
-        // "whose job is this and where did it come from" comes after.
-        List {
-            currentStepSection(detail)
-            proofSection(detail.proof)
+    private func page(_ detail: JobDetail) -> some View {
+        let focus = currentStep(detail)
+        let focusIndex = focus.flatMap { f in detail.steps.firstIndex { $0.id == f.id } }
+        let everythingDone = detail.focusStep?.isEverythingDone ?? detail.steps.allSatisfy(\.isComplete)
 
-            if !detail.dates.isEmpty { datesSection(detail.dates) }
-
-            if let instructions = detail.instructions, !instructions.isEmpty {
-                instructionsSection(instructions)
-            }
-            if let items = detail.lineItems, !items.isEmpty { lineItemsSection(items) }
-
-            // Directly under the workflow, because raising one and finishing
-            // one are both workflow actions — finishing completes two steps.
-            JobConsignmentSection(jobId: jobId)
+        return VStack(alignment: .leading, spacing: 0) {
+            header(detail, focus: focus, focusIndex: focusIndex, everythingDone: everythingDone)
 
             if !detail.steps.isEmpty {
-                stepsSection(detail.steps, capabilities: detail.workflowCapabilities)
+                StepTrack(steps: detail.steps, currentIndex: everythingDone ? nil : focusIndex)
+                    .section(top: PaperSpace.xxl)
             }
 
-            if !detail.customer.isEmpty { customerSection(detail.customer) }
-            if !detail.references.isEmpty { referencesSection(detail.references) }
-            if !detail.production.isEmpty { productionSection(detail.production) }
-            if !detail.logistics.isEmpty { logisticsSection(detail.logistics) }
-            if let team = detail.team, !team.isEmpty { teamSection(team) }
-            if !detail.aliases.isEmpty { aliasesSection(detail.aliases) }
-
-            provenanceSection(detail.provenance)
-            shopvoxSection(detail)
-        }
-        .listStyle(.insetGrouped)
-        .refreshable { await viewModel.load() }
-    }
-
-    // MARK: Current step
-    //
-    // The one thing this screen is most often opened to do.
-    //
-    // Before this, moving a step meant scrolling past six sections to a list
-    // of thirteen, finding the right row among them, and hitting a small chip.
-    // People did not find it. So the step the job is ACTUALLY on is lifted to
-    // the top with one full-width action on it, and the full workflow stays
-    // further down for the times somebody needs a different row.
-
-    @ViewBuilder
-    private func currentStepSection(_ detail: JobDetail) -> some View {
-        if let step = currentStep(detail) {
-            Section {
-                CurrentStepCard(
-                    step: step,
-                    stageName: detail.production.currentStage ?? step.group,
-                    isEverythingDone: detail.focusStep?.isEverythingDone
-                        ?? detail.steps.allSatisfy(\.isComplete),
-                    isMoving: viewModel.isMoving(step),
+            if let focus {
+                CurrentStepActions(
+                    step: focus,
+                    isEverythingDone: everythingDone,
+                    isMoving: viewModel.isMoving(focus),
                     isAnyMoving: viewModel.isAnyStepMoving,
                     perform: { action in
-                        Task { await viewModel.perform(action, on: step) }
+                        Task { await viewModel.perform(action, on: focus) }
                     }
                 )
-            } header: {
-                Text("Now")
+                .section(top: PaperSpace.xxl)
             }
+
+            proofSection(detail.proof).section()
+
+            if !detail.dates.isEmpty { datesSection(detail.dates).section() }
+
+            if let items = detail.lineItems, !items.isEmpty { lineItemsSection(items).section() }
+
+            if let instructions = detail.instructions, !instructions.isEmpty {
+                instructionsSection(instructions).section()
+            }
+
+            // Directly under the workflow facts, because raising one and
+            // finishing one are both workflow actions — finishing completes two
+            // steps.
+            JobConsignmentSection(jobId: jobId).section()
+
+            if !detail.steps.isEmpty {
+                stepsSection(detail.steps, capabilities: detail.workflowCapabilities).section()
+            }
+
+            if let team = detail.team, !team.isEmpty { teamSection(team).section() }
+
+            if hasMoreFacts(detail) { moreSection(detail).section() }
+
+            if !detail.aliases.isEmpty { aliasesSection(detail.aliases).section() }
+
+            provenanceSection(detail).section()
+        }
+    }
+
+    // MARK: Header: refs, customer, title, one status line
+
+    private func title(_ text: String) -> some View {
+        Text(text)
+            .paperType(.largeTitle)
+            .foregroundStyle(PaperColor.ink)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func header(_ detail: JobDetail, focus: JobStep?, focusIndex: Int?, everythingDone: Bool) -> some View {
+        let r = detail.references
+        let primary = r.salesOrderNumber.map { "SO \($0)" } ?? r.jobNumber.map { "JB \($0)" }
+        let customer = detail.customer.name ?? knownTitle ?? "Job"
+
+        return VStack(alignment: .leading, spacing: PaperSpace.s) {
+            HStack(spacing: PaperSpace.m) {
+                if let primary { Code(primary, color: PaperColor.ink, size: 14) }
+                if let shopify = r.shopifyOrderNumber { Code("Shopify #\(shopify)", size: 14) }
+            }
+            title(customer)
+            // The job's title isn't on the detail response; it comes with the
+            // row that opened this screen, when there was one.
+            if let jobTitle, jobTitle != customer {
+                Text(jobTitle).paperType(.bodyL).foregroundStyle(PaperColor.body)
+            }
+            statusLine(detail, focus: focus, focusIndex: focusIndex, everythingDone: everythingDone)
+                .padding(.top, PaperSpace.xs)
+        }
+        .padding(.top, PaperSpace.s)
+    }
+
+    @ViewBuilder
+    private func statusLine(_ detail: JobDetail, focus: JobStep?, focusIndex: Int?, everythingDone: Bool) -> some View {
+        if everythingDone, !detail.steps.isEmpty {
+            StatusText("All \(detail.steps.count) steps done", tone: .done, style: .subhead)
+        } else if let focus, let focusIndex {
+            StatusText("\(focus.name) · \(focusIndex + 1) of \(detail.steps.count) · \(focus.displayState.lowercased())",
+                       tone: focus.tone, style: .subhead)
+        } else if let step = detail.production.currentStep {
+            StatusText(step, tone: .neutral, style: .subhead)
         }
     }
 
@@ -169,70 +203,55 @@ struct JobDetailView: View {
 
     // MARK: - Sections
 
-    private func provenanceSection(_ p: JobProvenance) -> some View {
-        Section {
-            HStack {
-                ProvenanceBadge(source: p.dataSource, isStale: p.isStale)
-                Spacer()
-                if let relative = JobDateFormatting.relative(fromISO8601: p.capturedAt) {
-                    Text(relative)
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+    @ViewBuilder
+    private func proofSection(_ proof: JobProof?) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PaperSectionHeader("Proof")
+            if let proof, !proof.isEmpty {
+                Button {
+                    showingProof = true
+                } label: {
+                    PaperRow("View proof", detail: proof.displayLabel, chevron: true)
                 }
+                .buttonStyle(.plain)
+            } else {
+                // Roughly one job in twenty has no proof. Saying so plainly
+                // beats an absent section, which reads as "still loading".
+                Text(proof?.note ?? "No proof has been attached to this job in ShopVOX.")
+                    .paperType(.subhead)
+                    .foregroundStyle(PaperColor.secondary)
+                    .padding(.vertical, PaperSpace.m)
             }
-
-            if p.isStale {
-                Label(
-                    "ShopVOX told us this job changed but not what changed. Open it in ShopVOX for the current state.",
-                    systemImage: "info.circle"
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-        } header: {
-            Text("Where this came from")
-        }
-    }
-
-    private func customerSection(_ c: JobCustomer) -> some View {
-        Section("Customer") {
-            if let name = c.name { DetailRow("Name", name) }
-            if let postcode = c.postcode { DetailRow("Postcode", postcode) }
-            if let contact = c.contactName { DetailRow("Contact", contact) }
-            if let email = c.contactEmail {
-                DetailRow("Email", email, isSelectable: true)
-            }
-        }
-    }
-
-    private func referencesSection(_ r: JobReferences) -> some View {
-        Section("References") {
-            if let so = r.salesOrderNumber { DetailRow("Sales order", so, isMonospaced: true) }
-            if let jb = r.jobNumber { DetailRow("Job number", jb, isMonospaced: true) }
-            if let project = r.projectNumber { DetailRow("Project", project, isMonospaced: true) }
-            if let shopify = r.shopifyOrderNumber { DetailRow("Shopify order", "#\(shopify)", isMonospaced: true) }
-            if let po = r.customerPo { DetailRow("Customer PO", po, isMonospaced: true) }
+            // ShopVOX gives no approval state, so this says exactly what it is.
+            footnote("The proof currently on the job in ShopVOX. Its approval state is not published by the API, so this is not necessarily the approved artwork.")
         }
     }
 
     private func datesSection(_ d: JobDates) -> some View {
-        Section {
+        VStack(alignment: .leading, spacing: 0) {
+            PaperSectionHeader("Despatch")
             // The despatch date leads, in its own weight. It is the one date
             // on this screen that decides what happens on the bench today.
             if let despatch = d.despatchDate ?? d.orderDueDate,
                let date = JobDateFormatting.parse(despatch) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Despatch")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 12)
+                HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
                     Text(JobDateFormatting.medium(date))
-                        .font(.headline)
+                        .paperType(.title, numeric: true)
+                        .foregroundStyle(PaperColor.ink)
+                    Spacer(minLength: PaperSpace.m)
+                    if let line = DueLine.relative(isoDate: despatch) {
+                        StatusText(line.text, tone: line.tone)
+                    }
+                }
+                .padding(.vertical, PaperSpace.s)
+                if let sourceLine = despatchSourceLine(d) {
+                    Text(sourceLine).paperType(.footnote).foregroundStyle(PaperColor.secondary)
+                        .padding(.bottom, PaperSpace.s)
                 }
             }
 
             if let prod = d.productionDueDate, let date = JobDateFormatting.parse(prod) {
-                DetailRow("Production due", JobDateFormatting.medium(date))
+                FactRow(label: "Production due", value: JobDateFormatting.medium(date))
             }
 
             // Shown only when it differs, and labelled as unmaintained. It
@@ -241,146 +260,89 @@ struct JobDetailView: View {
             if let shipping = d.shippingDate,
                shipping != (d.despatchDate ?? d.orderDueDate),
                let date = JobDateFormatting.parse(shipping) {
-                DetailRow("ShopVOX shipping date", JobDateFormatting.medium(date))
+                FactRow(label: "ShopVOX shipping date", value: JobDateFormatting.medium(date))
             }
-        } header: {
-            Text("Dates")
-        } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Despatch is the due date on the order in ShopVOX — the date the office moves when a job is brought forward. It is not a confirmed production schedule.")
-                if d.shippingDate != nil, d.shippingDate != (d.despatchDate ?? d.orderDueDate) {
-                    Text("ShopVOX also carries a separate \"shipping date\" field. It is not kept up to date here, so nothing works from it.")
-                }
-            }
+
+            footnote("Despatch is the due date on the order in ShopVOX — the date the office moves when a job is brought forward. It is not a confirmed production schedule."
+                     + (d.shippingDate != nil && d.shippingDate != (d.despatchDate ?? d.orderDueDate)
+                        ? " ShopVOX also carries a separate \"shipping date\" field. It is not kept up to date here, so nothing works from it."
+                        : ""))
         }
+    }
+
+    /// Where the despatch date came from and when it was last checked, if the
+    /// server says.
+    private func despatchSourceLine(_ d: JobDates) -> String? {
+        var parts: [String] = []
+        if let source = d.despatchDateSource { parts.append("From ShopVOX \(source)") }
+        if let seen = JobDateFormatting.relative(fromISO8601: d.despatchDateSeenAt) { parts.append("checked \(seen)") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     // MARK: Instructions and contents
 
     private func instructionsSection(_ instructions: JobInstructions) -> some View {
-        Section {
+        VStack(alignment: .leading, spacing: 0) {
+            PaperSectionHeader("Instructions")
             ForEach(instructions.sections, id: \.title) { section in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(section.title)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: PaperSpace.xs) {
+                    Text(section.title).paperType(.label).foregroundStyle(PaperColor.secondary)
                     Text(JobTextFormatting.plain(section.text))
-                        .font(.subheadline)
+                        .paperType(.body)
+                        .foregroundStyle(PaperColor.body)
+                        .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, PaperSpace.m)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .bottom) { PaperHairline(color: PaperColor.hairlineSoft) }
             }
-        } header: {
-            Text("Instructions")
-        } footer: {
-            Text("Written on the job in ShopVOX. Formatting is stripped, so check ShopVOX if something reads oddly.")
+            footnote("Written on the job in ShopVOX. Formatting is stripped, so check ShopVOX if something reads oddly.")
         }
     }
 
     private func lineItemsSection(_ items: [JobLineItem]) -> some View {
-        Section {
+        VStack(alignment: .leading, spacing: 0) {
+            PaperSectionHeader("As ordered")
             ForEach(items, id: \.stableId) { item in
                 VStack(alignment: .leading, spacing: 3) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(item.displayName)
-                            .font(.subheadline)
-                        Spacer(minLength: 12)
+                    HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
+                        Text(item.displayName).paperType(.body).foregroundStyle(PaperColor.ink)
+                        Spacer(minLength: PaperSpace.m)
                         if let quantity = item.quantityLabel {
-                            Text(quantity)
-                                .font(.subheadline.weight(.semibold).monospacedDigit())
+                            Text(quantity).paperType(.subhead, numeric: true).foregroundStyle(PaperColor.body)
                         }
                     }
                     if let description = item.description {
                         Text(JobTextFormatting.plain(description))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .paperType(.footnote)
+                            .foregroundStyle(PaperColor.secondary)
                             .lineLimit(6)
                     }
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, PaperSpace.m)
+                .overlay(alignment: .bottom) { PaperHairline(color: PaperColor.hairlineSoft) }
             }
-        } header: {
-            Text("On this job")
-        } footer: {
-            Text("The line items on the ShopVOX order, with the quantities as ordered.")
-        }
-    }
-
-    private func productionSection(_ p: JobProduction) -> some View {
-        Section("Current state") {
-            if let step = p.currentStep { DetailRow("Step", step) }
-            if let stage = p.currentStage ?? p.currentStepGroup { DetailRow("Stage", stage) }
-            if let state = p.workflowState { DetailRow("State", state.capitalized) }
-            if let days = p.daysLeft {
-                // Negative days left is how ShopVOX expresses overdue.
-                DetailRow(
-                    days < 0 ? "Overdue by" : "Days left",
-                    days < 0 ? "\(abs(days)) days" : "\(days) days"
-                )
-            }
+            footnote("The line items on the ShopVOX order, with the quantities as ordered.")
         }
     }
 
     private func teamSection(_ t: JobTeam) -> some View {
-        Section("Team") {
-            if let rep = t.salesRep { DetailRow("Sales rep", rep) }
-            if let pm = t.productionManager { DetailRow("Production", pm) }
-            if let designer = t.designer { DetailRow("Designer", designer) }
+        VStack(alignment: .leading, spacing: 0) {
+            PaperSectionHeader("Team")
+            if let rep = t.salesRep { FactRow(label: "Sales rep", value: rep) }
+            if let pm = t.productionManager { FactRow(label: "Production", value: pm) }
+            if let designer = t.designer { FactRow(label: "Designer", value: designer) }
         }
     }
 
-    @ViewBuilder
-    private func proofSection(_ proof: JobProof?) -> some View {
-        Section {
-            if let proof, !proof.isEmpty {
-                Button {
-                    showingProof = true
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "doc.richtext.fill")
-                            .font(.system(size: 22))
-                            .foregroundStyle(.white)
-                            .frame(width: 40, height: 40)
-                            .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 10))
-
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("View proof")
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-                            Text(proof.displayLabel)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-
-                        Image(systemName: "chevron.right")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .padding(.vertical, 4)
-                }
-            } else {
-                // Roughly one job in twenty has no proof. Saying so plainly
-                // beats an absent section, which reads as "still loading".
-                Label(
-                    proof?.note ?? "No proof has been attached to this job in ShopVOX.",
-                    systemImage: "doc.badge.ellipsis"
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    private func stepsSection(_ steps: [JobStep], capabilities: WorkflowCapabilities?) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PaperSectionHeader("Whole workflow") {
+                Text("\(steps.filter(\.isComplete).count) of \(steps.count) done")
+                    .paperType(.footnote, numeric: true)
+                    .foregroundStyle(PaperColor.tertiary)
             }
-        } footer: {
-            // ShopVOX gives no approval state, so this says exactly what it is.
-            Text("The proof currently on the job in ShopVOX. Its approval state is not published by the API, so this is not necessarily the approved artwork.")
-        }
-    }
-
-    private func stepsSection(
-        _ steps: [JobStep],
-        capabilities: WorkflowCapabilities?
-    ) -> some View {
-        Section {
             ForEach(steps) { step in
                 StepRow(
                     step: step,
@@ -391,23 +353,17 @@ struct JobDetailView: View {
                     }
                 )
             }
-        } header: {
-            Text("Whole workflow")
-        } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Every step on this job. Starting or completing one changes it in ShopVOX — the app shows the result only once ShopVOX confirms it.")
-
-                // Said once, because it is true of the whole job rather than of
-                // any one step.
+            VStack(alignment: .leading, spacing: PaperSpace.xs) {
+                footnote("Every step on this job. Starting or completing one changes it in ShopVOX — the app shows the result only once ShopVOX confirms it.")
+                // Said once, because it is true of the whole job rather than
+                // of any one step.
                 if let reason = jobWideBlockingReason(steps) {
-                    Text(reason)
-                        .foregroundStyle(.orange)
+                    StatusText(reason, tone: .soon).lineLimit(nil)
                 }
-
                 if let note = capabilities?.note {
                     // The API's limits, stated rather than met as a dead
                     // button: there is no un-complete and no way to assign.
-                    Text(note)
+                    footnote(note)
                 }
             }
         }
@@ -419,95 +375,94 @@ struct JobDetailView: View {
         return steps.first?.action(.start)?.reason
     }
 
-    private func logisticsSection(_ l: JobLogistics) -> some View {
-        Section("Shipping") {
-            if let method = l.shippingMethod { DetailRow("Method", method) }
-            if let city = l.shipToCity { DetailRow("Ship to", city) }
+    // MARK: Everything else, said once
+
+    private func hasMoreFacts(_ d: JobDetail) -> Bool {
+        let c = d.customer, r = d.references, p = d.production, l = d.logistics
+        return c.postcode != nil || c.contactName != nil || c.contactEmail != nil
+            || r.projectNumber != nil || r.customerPo != nil || (r.jobNumber != nil && r.salesOrderNumber != nil)
+            || p.currentStage != nil || p.currentStepGroup != nil || p.workflowState != nil || p.daysLeft != nil
+            || l.shippingMethod != nil || l.shipToCity != nil
+    }
+
+    private func moreSection(_ d: JobDetail) -> some View {
+        let c = d.customer, r = d.references, p = d.production, l = d.logistics
+        return VStack(alignment: .leading, spacing: 0) {
+            PaperSectionHeader("Details")
+            if let contact = c.contactName { FactRow(label: "Contact", value: contact) }
+            if let email = c.contactEmail {
+                FactRow(label: "Email", value: email).textSelection(.enabled)
+            }
+            if let postcode = c.postcode { FactRow(label: "Postcode", value: postcode) }
+            if let method = l.shippingMethod { FactRow(label: "Shipping", value: method) }
+            if let city = l.shipToCity { FactRow(label: "Ship to", value: city) }
+            // The header shows the sales order (or job number when there is
+            // none) and the Shopify order; the rest of the references are here.
+            if r.salesOrderNumber != nil, let jb = r.jobNumber { FactRow(label: "Job number", value: jb) }
+            if let project = r.projectNumber { FactRow(label: "Project", value: project) }
+            if let po = r.customerPo { FactRow(label: "Customer PO", value: po) }
+            if let stage = p.currentStage ?? p.currentStepGroup { FactRow(label: "Stage", value: stage) }
+            if let state = p.workflowState { FactRow(label: "State", value: state.capitalized) }
+            if let days = p.daysLeft {
+                // Negative days left is how ShopVOX expresses overdue.
+                FactRow(label: days < 0 ? "Overdue by" : "Days left", value: Format.count(abs(days), "day"))
+            }
         }
     }
 
     private func aliasesSection(_ aliases: [JobAlias]) -> some View {
-        Section {
+        VStack(alignment: .leading, spacing: 0) {
+            PaperSectionHeader("Also known as")
             ForEach(aliases) { alias in
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(alias.value)
-                            .font(.subheadline.monospaced())
-                            .lineLimit(2)
-                        Text(alias.kindLabel)
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                    Spacer()
-                    if alias.needsConfirmation {
-                        // A guessed link must never read as an established fact.
-                        Label("Unconfirmed", systemImage: "questionmark.circle")
-                            .font(.caption2)
-                            .foregroundStyle(.orange)
+                RowContainer {
+                    HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Code(alias.value, color: PaperColor.ink, size: 14).lineLimit(2)
+                            Text(alias.kindLabel).paperType(.caption).foregroundStyle(PaperColor.tertiary)
+                        }
+                        Spacer(minLength: PaperSpace.m)
+                        if alias.needsConfirmation {
+                            // A guessed link must never read as an established fact.
+                            StatusText("Unconfirmed", tone: .soon, style: .caption)
+                        }
                     }
                 }
-                .padding(.vertical, 2)
             }
-        } header: {
-            Text("Also known as")
-        } footer: {
-            Text("Other references that find this job, including the name printed on its panel labels.")
+            footnote("Other references that find this job, including the name printed on its panel labels.")
         }
     }
 
-    private func shopvoxSection(_ detail: JobDetail) -> some View {
-        Section {
+    private func provenanceSection(_ detail: JobDetail) -> some View {
+        let p = detail.provenance
+        return VStack(alignment: .leading, spacing: PaperSpace.m) {
+            PaperSectionHeader("Where this came from") {
+                if let relative = JobDateFormatting.relative(fromISO8601: p.capturedAt) {
+                    Text(relative).paperType(.footnote).foregroundStyle(PaperColor.tertiary)
+                }
+            }
+            ProvenanceBadge(source: p.dataSource, isStale: p.isStale)
+            if p.isStale {
+                Text("ShopVOX told us this job changed but not what changed. Open it in ShopVOX for the current state.")
+                    .paperType(.footnote)
+                    .foregroundStyle(PaperColor.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let urlString = detail.shopvoxUrl, let url = URL(string: urlString) {
-                Button {
-                    openURL(url)
-                } label: {
-                    Label("Open in ShopVOX", systemImage: "arrow.up.right.square")
-                }
+                Button("Open in ShopVOX") { openURL(url) }
+                    .buttonStyle(.paperPill(.outline, .regular))
             } else {
-                Label(
-                    "This job has not been seen by a ShopVOX webhook yet, so there is no direct link to it.",
-                    systemImage: "link.badge.plus"
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                footnote("This job has not been seen by a ShopVOX webhook yet, so there is no direct link to it.")
             }
-        } footer: {
-            Text("ShopVOX is the source of truth for job status.")
+            footnote("ShopVOX is the source of truth for job status.")
         }
     }
-}
 
-// MARK: - Row
-
-struct DetailRow: View {
-    let label: String
-    let value: String
-    var isMonospaced: Bool = false
-    var isSelectable: Bool = false
-
-    init(_ label: String, _ value: String, isMonospaced: Bool = false, isSelectable: Bool = false) {
-        self.label = label
-        self.value = value
-        self.isMonospaced = isMonospaced
-        self.isSelectable = isSelectable
-    }
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(label)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 12)
-            Group {
-                if isSelectable {
-                    Text(value).textSelection(.enabled)
-                } else {
-                    Text(value)
-                }
-            }
-            .font(isMonospaced ? .subheadline.monospaced() : .subheadline)
-            .multilineTextAlignment(.trailing)
-        }
+    private func footnote(_ text: String) -> some View {
+        Text(text)
+            .paperType(.footnote)
+            .foregroundStyle(PaperColor.tertiary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.top, PaperSpace.m)
     }
 }
 
@@ -527,42 +482,37 @@ private struct StepRow: View {
     let isAnyMoving: Bool
     let perform: (StepActionKind) -> Void
 
+    @State private var confirmingComplete = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(step.name)
-                        .font(.subheadline)
+        VStack(alignment: .leading, spacing: PaperSpace.s) {
+            HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(step.name).paperType(.body).foregroundStyle(PaperColor.ink)
                     if let who = step.assignedToName {
-                        Text(who)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
+                        Text(who).paperType(.caption).foregroundStyle(PaperColor.secondary).lineLimit(2)
                     } else if let group = step.group {
-                        Text(group)
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                        Text(group).paperType(.caption).foregroundStyle(PaperColor.tertiary)
                     }
                 }
-
-                Spacer()
-
+                Spacer(minLength: PaperSpace.m)
                 if isMoving {
-                    ProgressView()
+                    ProgressView().controlSize(.small).tint(PaperColor.secondary)
                 } else {
                     StepStateChip(step: step)
                 }
             }
 
             if let controls = visibleControls, !controls.isEmpty {
-                HStack(spacing: 8) {
+                HStack(spacing: PaperSpace.s) {
                     ForEach(controls, id: \.self) { action in
-                        StepActionButton(
-                            action: action,
-                            availability: step.action(action),
-                            isDisabled: isAnyMoving,
-                            perform: { perform(action) }
-                        )
+                        Button(action.title) {
+                            // Complete asks first, here as on the main button:
+                            // it is the one press the app cannot undo.
+                            if action == .complete { confirmingComplete = true } else { perform(action) }
+                        }
+                        .buttonStyle(.paperChip())
+                        .disabled(isAnyMoving || !(step.action(action)?.allowed ?? false))
                     }
                 }
             }
@@ -573,12 +523,18 @@ private struct StepRow: View {
             // instead; repeating it thirteen times is how a footer stops
             // being read.
             if let blocked = perStepReason {
-                Text(blocked)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                Text(blocked).paperType(.caption).foregroundStyle(PaperColor.tertiary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, PaperSpace.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) { PaperHairline(color: PaperColor.hairlineSoft) }
+        .confirmationDialog("Complete \(step.name)?", isPresented: $confirmingComplete, titleVisibility: .visible) {
+            Button("Complete \(step.name)") { perform(.complete) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This marks the step done in ShopVOX. It cannot be undone from the app — a step reopened has to be done in ShopVOX itself.")
+        }
     }
 
     /// Actions worth putting on screen: the ones that are allowed, plus
@@ -599,27 +555,6 @@ private struct StepRow: View {
     }
 }
 
-private struct StepActionButton: View {
-    let action: StepActionKind
-    let availability: StepActionAvailability?
-    let isDisabled: Bool
-    let perform: () -> Void
-
-    var body: some View {
-        Button(action: perform) {
-            Label(action.title, systemImage: action.systemImage)
-                .font(.caption.weight(.semibold))
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .tint(action == .complete ? .green : .accentColor)
-        .disabled(isDisabled || !(availability?.allowed ?? false))
-        // Stops a tap on the button from also opening whatever the row is
-        // inside — a List row swallows these otherwise.
-        .buttonStyle(.bordered)
-    }
-}
-
 // MARK: - Action outcome
 
 /// The result of the last workflow action.
@@ -631,43 +566,34 @@ private struct StepActionBanner: View {
     let result: StepActionOutcome
     let dismiss: () -> Void
 
-    private var icon: String {
-        if !result.isSuccess { return "exclamationmark.triangle.fill" }
-        return result.isConfirmed ? "checkmark.circle.fill" : "clock.badge.questionmark"
-    }
-
-    private var tint: Color {
-        if !result.isSuccess { return .red }
-        return result.isConfirmed ? .green : .orange
+    private var tone: Tone {
+        if !result.isSuccess { return .held }
+        return result.isConfirmed ? .done : .soon
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: icon)
-                .foregroundStyle(tint)
+        HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
+            PaperIcon(result.isSuccess && result.isConfirmed ? .check : .alert, size: 15, lineWidth: 2, color: tone.iconColor)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
             Text(result.message)
-                .font(.footnote)
+                .paperType(.subhead)
+                .foregroundStyle(PaperColor.ink)
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption)
+            Spacer(minLength: PaperSpace.s)
+            Button(action: dismiss) {
+                PaperIcon(.close, size: 12, lineWidth: 2, color: PaperColor.secondary)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .buttonStyle(.paperIcon)
+            .accessibilityLabel("Dismiss")
         }
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(tint.opacity(0.35))
-        )
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-        .animation(.easeOut(duration: 0.2), value: result.id)
+        .padding(.leading, PaperSpace.l)
+        .padding(.vertical, PaperSpace.xxs)
+        .background(tone.soft, in: RoundedRectangle(cornerRadius: 12))
+        .background(PaperColor.paper, in: RoundedRectangle(cornerRadius: 12))
+        .screen()
+        .padding(.bottom, PaperSpace.s)
+        .transition(.opacity)
+        .animation(PaperMotion.fade, value: result.id)
     }
 }
 
@@ -707,28 +633,28 @@ enum JobTextFormatting {
     }
 }
 
-// MARK: - Current step card
+// MARK: - Current step actions
 //
 // What the job is on now, and the one thing most people came here to do.
 //
 // The design problem this solves: the workflow list shows thirteen steps, each
 // with two small chips, and nothing on the screen said which row mattered.
 // People could not find how to update a step at all. Here there is one step,
-// named, with one full-width button on it.
+// named in the status line above, with one 60 pt button for it.
 //
 // Which action is primary depends on where the step is. A step not yet started
-// leads with Start; a step running leads with Complete, because by the time
-// somebody is looking at a running step on a bench, finishing it is what they
-// are about to do. The other action stays available, smaller.
+// leads with Start; a step running leads with Finish (Complete in ShopVOX),
+// because by the time somebody is looking at a running step on a bench,
+// finishing it is what they are about to do. The other action stays
+// available, beside it.
 //
 // Complete asks first. Start and Pause do not. ShopVOX has no way to reopen a
 // completed step through the API, so that is the one press here that a person
-// cannot undo from the app — and it is now a large button at the top of the
+// cannot undo from the app — and it is a large button at the top of the
 // screen, which is exactly where a mis-tap happens.
 
-private struct CurrentStepCard: View {
+private struct CurrentStepActions: View {
     let step: JobStep
-    let stageName: String?
     /// Whether the whole job is finished. "The next step is below" is not
     /// true of a finished job, and saying it sends somebody scrolling for a
     /// step that does not exist.
@@ -755,54 +681,36 @@ private struct CurrentStepCard: View {
         step.isActionable && (step.action(action)?.allowed ?? false)
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            header
+    private func title(_ action: StepActionKind) -> String {
+        switch action {
+        case .start: "Start \(step.name)"
+        case .complete: "Finish \(step.name)"
+        case .stop: "Pause"
+        }
+    }
 
+    var body: some View {
+        VStack(alignment: .leading, spacing: PaperSpace.m) {
             if let primary {
                 Button {
-                    if primary == .complete {
-                        confirmingComplete = true
-                    } else {
-                        perform(primary)
-                    }
+                    if primary == .complete { confirmingComplete = true } else { perform(primary) }
                 } label: {
-                    HStack {
-                        Spacer()
-                        if isMoving {
-                            ProgressView().tint(.white)
-                        } else {
-                            Label(
-                                "\(primary.title) \(step.name)",
-                                systemImage: primary.systemImage
-                            )
-                            .font(.headline)
-                        }
-                        Spacer()
+                    if isMoving {
+                        ProgressView().tint(PaperColor.onAccent)
+                    } else {
+                        Text(title(primary)).lineLimit(1).minimumScaleFactor(0.75)
                     }
-                    .padding(.vertical, 6)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .tint(primary == .complete ? .green : .accentColor)
+                .buttonStyle(.paperPill(.accent, .floor, fullWidth: true))
                 .disabled(isAnyMoving)
 
                 if !secondary.isEmpty {
-                    HStack(spacing: 10) {
+                    HStack(spacing: PaperSpace.m) {
                         ForEach(secondary, id: \.self) { action in
-                            Button {
-                                if action == .complete {
-                                    confirmingComplete = true
-                                } else {
-                                    perform(action)
-                                }
-                            } label: {
-                                Label(action.title, systemImage: action.systemImage)
-                                    .font(.subheadline)
-                                    .frame(maxWidth: .infinity)
+                            Button(action == .complete ? "Finish" : action.title) {
+                                if action == .complete { confirmingComplete = true } else { perform(action) }
                             }
-                            .buttonStyle(.bordered)
-                            .controlSize(.regular)
+                            .buttonStyle(.paperPill(.outline, .regular, fullWidth: true))
                             .disabled(isAnyMoving)
                         }
                     }
@@ -810,47 +718,20 @@ private struct CurrentStepCard: View {
             } else if let reason = blockedReason {
                 // Nothing to press, and why. A card with no button and no
                 // explanation is the fault this screen started with.
-                Label(reason, systemImage: "info.circle")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(reason)
+                    .paperType(.subhead)
+                    .foregroundStyle(PaperColor.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let who = step.assignedToName {
+                Text("Assigned to \(who)").paperType(.footnote).foregroundStyle(PaperColor.tertiary)
             }
         }
-        .padding(.vertical, 6)
-        .confirmationDialog(
-            "Complete \(step.name)?",
-            isPresented: $confirmingComplete,
-            titleVisibility: .visible
-        ) {
+        .confirmationDialog("Complete \(step.name)?", isPresented: $confirmingComplete, titleVisibility: .visible) {
             Button("Complete \(step.name)") { perform(.complete) }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This marks the step done in ShopVOX. It cannot be undone from the app — a step reopened has to be done in ShopVOX itself.")
-        }
-    }
-
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(step.name)
-                    .font(.title3.weight(.semibold))
-
-                if let stageName {
-                    Text(stageName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let who = step.assignedToName {
-                    Text(who)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(2)
-                }
-            }
-
-            Spacer()
-
-            StepStateChip(step: step)
         }
     }
 

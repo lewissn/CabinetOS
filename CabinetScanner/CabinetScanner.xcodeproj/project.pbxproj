@@ -98,6 +98,7 @@
 		D38EF451334A1BFE8286EE6C /* DesignShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3ABB6FDA8953570BA322B06 /* DesignShared.swift */; };
 		D3FC5946D7EF4B3C0D0ABCA7 /* ModelPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E579059DAC4EABC4A56A9A /* ModelPresentation.swift */; };
 		D328509FCA7EB1A27B59F97D /* ResultBand.swift in Sources */ = {isa = PBXBuildFile; fileRef = D384FC518A9DF2284D0F7346 /* ResultBand.swift */; };
+		D3025994284AEFCF5C221CEE /* StepTrack.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3AB64AA893F607BB813E9A7 /* StepTrack.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -192,6 +193,7 @@
 		D3ABB6FDA8953570BA322B06 /* DesignShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignShared.swift; sourceTree = "<group>"; };
 		D3E579059DAC4EABC4A56A9A /* ModelPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPresentation.swift; sourceTree = "<group>"; };
 		D384FC518A9DF2284D0F7346 /* ResultBand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultBand.swift; sourceTree = "<group>"; };
+		D3AB64AA893F607BB813E9A7 /* StepTrack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StepTrack.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -449,6 +451,7 @@
 				B10000000000000000000065 /* JobSearchView.swift */,
 				B10000000000000000000066 /* JobDetailView.swift */,
 				B10000000000000000000067 /* ProductionBoardView.swift */,
+				D3AB64AA893F607BB813E9A7 /* StepTrack.swift */,
 			);
 			path = Jobs;
 			sourceTree = "<group>";
@@ -546,6 +549,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D3025994284AEFCF5C221CEE /* StepTrack.swift in Sources */,
 				D328509FCA7EB1A27B59F97D /* ResultBand.swift in Sources */,
 				D3FC5946D7EF4B3C0D0ABCA7 /* ModelPresentation.swift in Sources */,
 				D38EF451334A1BFE8286EE6C /* DesignShared.swift in Sources */,

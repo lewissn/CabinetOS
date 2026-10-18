@@ -1,31 +1,16 @@
+import CabinetDesign
 import SwiftUI
 
 // MARK: - Provenance Badge
 //
 // The visual contract for the whole job-index feature: no record is shown
 // without saying where it came from. A ShopVOX-confirmed status and a guess
-// assembled from a manifest must never look alike.
+// assembled from a manifest must never look alike. Drawn quietly: a small
+// dot and words, so it informs without competing with the job.
 
 extension JobDataSource {
-    var tint: Color {
-        switch self {
-        case .live:     return .green
-        case .derived:  return .blue
-        case .imported: return .indigo
-        case .local:    return .purple
-        case .inferred: return .orange
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .live:     return "dot.radiowaves.left.and.right"
-        case .derived:  return "doc.text"
-        case .imported: return "tray.and.arrow.down"
-        case .local:    return "iphone"
-        case .inferred: return "questionmark.circle"
-        }
-    }
+    /// Only a guess is coloured (orange: check it). Green is kept for done.
+    var tone: Tone { self == .inferred ? .soon : .neutral }
 }
 
 struct ProvenanceBadge: View {
@@ -33,59 +18,89 @@ struct ProvenanceBadge: View {
     var isStale: Bool = false
     var compact: Bool = false
 
-    private var tint: Color { isStale ? .orange : source.tint }
+    private var tone: Tone { isStale ? .soon : source.tone }
+
+    private var dotColor: Color { tone == .soon ? PaperColor.warning : PaperColor.muted }
+    private var isHollow: Bool { tone != .soon && (source == .derived || source == .imported) }
 
     private var text: String {
         if isStale { return compact ? "Stale" : "May be out of date" }
         return compact ? source.shortLabel : source.label
     }
 
-    private var icon: String {
-        isStale ? "clock.badge.exclamationmark" : source.systemImage
-    }
-
     var body: some View {
-        Label(text, systemImage: icon)
-            .font(compact ? .caption2 : .caption)
-            .fontWeight(.medium)
-            .foregroundStyle(tint)
-            .padding(.horizontal, compact ? 6 : 8)
-            .padding(.vertical, compact ? 2 : 4)
-            .background(tint.opacity(0.12), in: Capsule())
-            // The colour alone is not the message — it is repeated in the
-            // label, so this reads correctly without colour vision too.
-            .accessibilityLabel(isStale ? "May be out of date" : source.label)
+        HStack(spacing: 5) {
+            // Filled for a confirmed or tracked record, hollow for one taken
+            // from an export or an order, orange for a guess or a stale one.
+            Circle()
+                .strokeBorder(dotColor, lineWidth: 1.2)
+                .background(Circle().fill(isHollow ? .clear : dotColor))
+                .frame(width: 6, height: 6)
+            Text(text)
+                .paperType(compact ? .caption : .footnote)
+                .foregroundStyle(PaperColor.tertiary)
+                .lineLimit(1)
+        }
+        // The colour alone is not the message — it is repeated in the
+        // label, so this reads correctly without colour vision too.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(isStale ? "May be out of date" : source.label)
     }
 }
 
-// MARK: - Step state chip
+// MARK: - Step state
+
+extension JobStep {
+    /// ShopVOX may mark a step skipped; drawn hatched on the track.
+    var isSkipped: Bool { state == "skipped" }
+
+    var tone: Tone {
+        if isComplete { return .done }
+        if isActive || isHalted { return .progress }
+        return .neutral
+    }
+}
 
 struct StepStateChip: View {
     let step: JobStep
 
-    private var tint: Color {
-        if step.isComplete { return .green }
-        if step.isActive { return .blue }
-        if step.isHalted { return .orange }
-        return .secondary
-    }
-
-    private var icon: String {
-        if step.isComplete { return "checkmark.circle.fill" }
-        if step.isActive { return "play.circle.fill" }
-        if step.isHalted { return "pause.circle.fill" }
-        return "circle"
-    }
-
     var body: some View {
-        Label(step.displayState, systemImage: icon)
-            .font(.caption)
-            .foregroundStyle(tint)
-            .labelStyle(.titleAndIcon)
+        StatusText(step.displayState, tone: step.tone)
     }
 }
 
 // MARK: - Due date
+
+/// How a due date reads: "Late · Tue 14 Oct" in red, "Due today" in orange,
+/// else "Due Thu 23 Oct". Always the ORDER due date, never a schedule.
+enum DueLine {
+    static func make(isoDate: String?, isOverdue: Bool = false, now: Date = .now) -> (text: String, tone: Tone)? {
+        guard let isoDate, let date = JobDateFormatting.parse(isoDate) else { return nil }
+        let cal = Calendar.london
+        let days = cal.dateComponents([.day], from: cal.startOfDay(for: now), to: cal.startOfDay(for: date)).day ?? 0
+        let day = JobDateFormatting.medium(date)
+        if isOverdue || days < 0 { return ("Late · \(day)", .held) }
+        if days == 0 { return ("Due today", .soon) }
+        if days == 1 { return ("Due tomorrow", .neutral) }
+        return ("Due \(day)", .neutral)
+    }
+}
+
+extension DueLine {
+    /// For beside a date that's already shown: "2 days late", "Today",
+    /// "Tomorrow", "In 5 days".
+    static func relative(isoDate: String?, now: Date = .now) -> (text: String, tone: Tone)? {
+        guard let isoDate, let date = JobDateFormatting.parse(isoDate) else { return nil }
+        let cal = Calendar.london
+        let days = cal.dateComponents([.day], from: cal.startOfDay(for: now), to: cal.startOfDay(for: date)).day ?? 0
+        switch days {
+        case ..<0: return ("\(Format.count(-days, "day")) late", .held)
+        case 0: return ("Today", .soon)
+        case 1: return ("Tomorrow", .neutral)
+        default: return ("In \(Format.count(days, "day"))", .neutral)
+        }
+    }
+}
 
 /// Renders a due date with its urgency, and never without saying that it is an
 /// ORDER due date rather than a scheduled production date.
@@ -95,25 +110,19 @@ struct DueDateLabel: View {
     var showsBasis: Bool = false
 
     var body: some View {
-        if let isoDate, let date = JobDateFormatting.parse(isoDate) {
+        if let line = DueLine.make(isoDate: isoDate, isOverdue: isOverdue) {
             HStack(spacing: 4) {
-                Image(systemName: isOverdue ? "exclamationmark.circle.fill" : "calendar")
-                    .font(.caption2)
-                Text(JobDateFormatting.medium(date))
-                    .font(.caption)
-                    .fontWeight(isOverdue ? .semibold : .regular)
+                StatusText(line.text, tone: line.tone)
                     // A wrapped date reads as two dates. Never wrap it, and
                     // never let it be the element that gets squeezed.
-                    .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                 if showsBasis {
                     Text("order due")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .paperType(.caption)
+                        .foregroundStyle(PaperColor.tertiary)
                         .lineLimit(1)
                 }
             }
-            .foregroundStyle(isOverdue ? Color.red : Color.secondary)
             .layoutPriority(1)
         }
     }

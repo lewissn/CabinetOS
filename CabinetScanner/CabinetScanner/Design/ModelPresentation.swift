@@ -78,3 +78,19 @@ extension Consignment {
         expectedItemCount > 0 ? Double(packedItemCount) / Double(expectedItemCount) : nil
     }
 }
+
+extension ProductionDateView {
+    /// Sentence case, for the board's tabs.
+    var label: String {
+        switch self {
+        case .overdue: "Overdue"
+        case .thisWeek: "This week"
+        case .today: "Today"
+        case .tomorrow: "Tomorrow"
+        case .nextWeek: "Next week"
+        case .upcoming: "Upcoming"
+        case .yesterday: "Yesterday"
+        case .recentlyCompleted: "Recent"
+        }
+    }
+}

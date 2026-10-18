@@ -1,3 +1,4 @@
+import CabinetDesign
 import SwiftUI
 
 // MARK: - Courier consignment, from the job page
@@ -114,7 +115,9 @@ struct JobConsignmentSection: View {
     }
 
     var body: some View {
-        Section {
+        VStack(alignment: .leading, spacing: 0) {
+            PaperSectionHeader("Courier consignment")
+
             ForEach(viewModel.existing) { consignment in
                 CourierConsignmentRow(
                     consignment: consignment,
@@ -124,34 +127,26 @@ struct JobConsignmentSection: View {
             }
 
             if isRaising {
-                raiseForm
+                raiseForm.padding(.top, PaperSpace.l)
             } else {
-                Button {
+                Button(viewModel.existing.isEmpty ? "Raise a courier consignment" : "Raise another consignment") {
                     isRaising = true
-                } label: {
-                    Label(
-                        viewModel.existing.isEmpty
-                            ? "Raise courier consignment"
-                            : "Raise another consignment",
-                        systemImage: "shippingbox.and.arrow.backward"
-                    )
                 }
+                .buttonStyle(.paperText(PaperColor.ink, .subhead, weight: .semibold))
                 .disabled(viewModel.isLoading)
+                .padding(.top, PaperSpace.xs)
             }
 
             if let error = viewModel.errorMessage {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
+                Notice(text: error, tone: .soon).padding(.top, PaperSpace.m)
             }
 
             if let result = viewModel.finishResult {
                 FinishOutcome(result: result) { viewModel.finishResult = nil }
+                    .padding(.top, PaperSpace.m)
             }
-        } header: {
-            Text("Courier consignment")
-        } footer: {
-            footerText
+
+            footerText.padding(.top, PaperSpace.m)
         }
         .task { await viewModel.load() }
         .confirmationDialog(
@@ -177,60 +172,64 @@ struct JobConsignmentSection: View {
         }
     }
 
-    @ViewBuilder
     private var raiseForm: some View {
-        // Named after the customer and their order, because that is how these
-        // get searched for afterwards.
-        TextField("Consignment name", text: $viewModel.name)
-            .autocorrectionDisabled()
+        VStack(alignment: .leading, spacing: PaperSpace.xl) {
+            // Named after the customer and their order, because that is how
+            // these get searched for afterwards.
+            PaperUnderlineField("Consignment name", text: $viewModel.name)
+                .autocorrectionDisabled()
 
-        Picker("Courier", selection: $viewModel.courier) {
-            Text("Not set").tag("")
-            ForEach(viewModel.couriers, id: \.self) { Text($0).tag($0) }
-        }
-
-        if let open = viewModel.openConsignment {
-            // A job can legitimately ship in two parts, so this warns rather
-            // than blocks — but nobody should raise a second by accident.
-            Label(
-                "\"\(open.manifestName)\" is already open for this job. Raising another is fine if it is shipping in two parts.",
-                systemImage: "exclamationmark.circle"
-            )
-            .font(.caption)
-            .foregroundStyle(.orange)
-        }
-
-        HStack {
-            Button {
-                Task {
-                    await viewModel.create()
-                    if viewModel.errorMessage == nil { isRaising = false }
-                }
-            } label: {
-                if viewModel.isWorking {
-                    ProgressView()
-                } else {
-                    Text("Raise consignment")
+            VStack(alignment: .leading, spacing: PaperSpace.s) {
+                PaperLabel("Courier")
+                PaperChips(viewModel.couriers, label: { $0 }, isSelected: { $0 == viewModel.courier }) { option in
+                    viewModel.courier = viewModel.courier == option ? "" : option
                 }
             }
-            .disabled(viewModel.isWorking || viewModel.name.trimmingCharacters(in: .whitespaces).isEmpty)
 
-            Spacer()
+            if let open = viewModel.openConsignment {
+                // A job can legitimately ship in two parts, so this warns
+                // rather than blocks — but nobody should raise a second by
+                // accident.
+                Notice(
+                    text: "\u{201C}\(open.manifestName)\u{201D} is already open for this job. Raising another is fine if it's shipping in two parts.",
+                    tone: .soon
+                )
+            }
 
-            Button("Cancel") { isRaising = false }
-                .foregroundStyle(.secondary)
+            HStack(spacing: PaperSpace.m) {
+                Button {
+                    Task {
+                        await viewModel.create()
+                        if viewModel.errorMessage == nil { isRaising = false }
+                    }
+                } label: {
+                    if viewModel.isWorking {
+                        ProgressView().tint(PaperColor.paper)
+                    } else {
+                        Text("Raise consignment")
+                    }
+                }
+                .buttonStyle(.paperPill(.ink, .regular))
+                .disabled(viewModel.isWorking || viewModel.name.trimmingCharacters(in: .whitespaces).isEmpty)
+
+                Button("Cancel") { isRaising = false }
+                    .buttonStyle(.paperText(PaperColor.secondary, .subhead))
+            }
         }
     }
 
     private var footerText: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Boxes are packed against the consignment in the Packaging tab.")
+        VStack(alignment: .leading, spacing: PaperSpace.xs) {
+            Text("Boxes are packed against the consignment in the Packing tab.")
             if viewModel.canCompleteSteps {
                 Text("Finishing it completes Pack & Wrap and then Despatch in ShopVOX.")
             } else if viewModel.info != nil {
                 Text("This record has no ShopVOX job behind it, so finishing a consignment will not complete any step.")
             }
         }
+        .paperType(.footnote)
+        .foregroundStyle(PaperColor.tertiary)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -242,46 +241,31 @@ private struct CourierConsignmentRow: View {
     let finish: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(consignment.manifestName)
-                        .font(.subheadline.weight(.medium))
+        VStack(alignment: .leading, spacing: PaperSpace.s) {
+            HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(consignment.manifestName).paperType(.body).foregroundStyle(PaperColor.ink)
                     if let courier = consignment.courier {
-                        Text(courier)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                        Text(courier).paperType(.footnote).foregroundStyle(PaperColor.secondary)
                     }
                 }
-
-                Spacer()
-
-                if consignment.isOpen {
-                    Label("Open", systemImage: "circle")
-                        .font(.caption2)
-                        .foregroundStyle(.blue)
-                } else {
-                    Label("Finished", systemImage: "checkmark.circle.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.green)
-                }
+                Spacer(minLength: PaperSpace.m)
+                StatusText(consignment.isOpen ? "Open" : "Finished", tone: consignment.isOpen ? .progress : .done)
             }
 
             if consignment.isOpen {
-                Button(action: finish) {
-                    Label("Finish consignment", systemImage: "checkmark.seal")
-                        .font(.caption.weight(.semibold))
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(isWorking)
+                Button("Finish consignment", action: finish)
+                    .buttonStyle(.paperPill(.outline, .compact))
+                    .disabled(isWorking)
             } else if consignment.hasMovedTheJobOn {
                 Text("Completed the job's steps in ShopVOX.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .paperType(.caption)
+                    .foregroundStyle(PaperColor.tertiary)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, PaperSpace.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) { PaperHairline(color: PaperColor.hairlineSoft) }
     }
 }
 
@@ -291,34 +275,27 @@ private struct FinishOutcome: View {
     let result: CourierConsignmentFinished
     let dismiss: () -> Void
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Label {
-                    Text(result.message ?? (result.stepsCompleted == true ? "Done." : "Finished."))
-                        .font(.caption)
-                } icon: {
-                    Image(systemName: result.stepsCompleted == true
-                          ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                    .foregroundStyle(result.stepsCompleted == true ? .green : .orange)
-                }
-                Spacer()
-                Button { dismiss() } label: { Image(systemName: "xmark").font(.caption2) }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-            }
+    private var tone: Tone { result.stepsCompleted == true ? .done : .soon }
 
-            ForEach(result.steps ?? []) { step in
-                HStack(spacing: 6) {
-                    Image(systemName: step.ok ? "checkmark" : "xmark")
-                        .font(.caption2)
-                        .foregroundStyle(step.ok ? .green : .red)
-                    Text(step.message)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+    var body: some View {
+        VStack(alignment: .leading, spacing: PaperSpace.s) {
+            HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
+                StatusText(result.message ?? (result.stepsCompleted == true ? "Done." : "Finished."), tone: tone, style: .subhead)
+                    .lineLimit(nil)
+                Spacer(minLength: PaperSpace.s)
+                Button(action: dismiss) {
+                    PaperIcon(.close, size: 12, lineWidth: 2, color: PaperColor.secondary)
                 }
+                .buttonStyle(.paperIcon)
+                .accessibilityLabel("Dismiss")
+            }
+            ForEach(result.steps ?? []) { step in
+                StatusText(step.message, tone: step.ok ? .done : .held, style: .footnote)
+                    .lineLimit(nil)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.leading, PaperSpace.l)
+        .padding(.vertical, PaperSpace.s)
+        .background(tone.soft, in: RoundedRectangle(cornerRadius: 12))
     }
 }

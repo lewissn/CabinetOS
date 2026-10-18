@@ -1,3 +1,4 @@
+import CabinetDesign
 import SwiftUI
 import PDFKit
 
@@ -51,38 +52,33 @@ struct ProofViewerView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            content
-                .navigationTitle(label)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { dismiss() }
-                    }
-                    ToolbarItem(placement: .primaryAction) {
-                        HStack {
-                            // Saved to a file first, so the share sheet offers
-                            // printing, Files and AirDrop rather than only a
-                            // link somebody else would have to be able to open.
-                            if let downloadedFile {
-                                ShareLink(item: downloadedFile) {
-                                    Label("Share", systemImage: "square.and.arrow.up")
-                                }
-                            }
-
-                            if let url {
-                                // The fallback when PDFKit cannot render the
-                                // file, and the route to a browser.
-                                Button {
-                                    openURL(url)
-                                } label: {
-                                    Label("Open outside", systemImage: "arrow.up.right.square")
-                                }
-                            }
+        VStack(spacing: 0) {
+            PaperTopBar(.close, title: label, onLeading: { dismiss() }) {
+                HStack(spacing: 0) {
+                    // Saved to a file first, so the share sheet offers
+                    // printing, Files and AirDrop rather than only a link
+                    // somebody else would have to be able to open.
+                    if let downloadedFile {
+                        ShareLink(item: downloadedFile) {
+                            PaperIcon(.arrowUp, size: 20)
+                                .frame(width: PaperSpace.tap, height: PaperSpace.tap)
+                                .contentShape(Rectangle())
                         }
+                        .accessibilityLabel("Share")
+                    }
+                    if let url {
+                        // The fallback when PDFKit cannot render the file,
+                        // and the route to a browser.
+                        BarIcon(glyph: .arrowRight, label: "Open outside the app") { openURL(url) }
                     }
                 }
+            }
+            .screen()
+            .padding(.top, PaperSpace.s)
+
+            content
         }
+        .paperBackground()
         .task { await load() }
     }
 
@@ -90,51 +86,45 @@ struct ProofViewerView: View {
     private var content: some View {
         switch state {
         case .loading:
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Loading artwork…")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            VStack {
+                LoadingLine("Loading the artwork")
+                Spacer()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .screen()
 
         case .loaded(let document):
             PDFDocumentView(document: document)
                 .ignoresSafeArea(edges: .bottom)
 
         case .notAPdf:
-            ContentUnavailableView {
-                Label("Cannot Show This File", systemImage: "doc.questionmark")
-            } description: {
-                Text("This artwork is not a PDF, so it cannot be displayed here.")
-            } actions: {
-                if let url {
-                    Button("Open outside the app") { openURL(url) }
-                        .buttonStyle(.borderedProminent)
-                }
-            }
+            message("This file can't be shown here", "The artwork isn't a PDF, so it can't be displayed in the app.",
+                    action: url.map { u in ("Open it outside the app", { openURL(u) }) })
 
-        case .noProof(let message):
+        case .noProof(let text):
             // An absent proof is not an error and is not offered a retry.
-            ContentUnavailableView {
-                Label("No Proof Yet", systemImage: "doc.badge.ellipsis")
-            } description: {
-                Text(message)
-            }
+            message("No proof yet", text, action: nil)
 
-        case .failed(let message):
-            ContentUnavailableView {
-                Label("Could Not Load Artwork", systemImage: "exclamationmark.triangle")
-            } description: {
-                Text(message)
-            } actions: {
-                Button("Try Again") { Task { await load() } }
-                    .buttonStyle(.borderedProminent)
-                if let url {
-                    Button("Open outside the app") { openURL(url) }
+        case .failed(let text):
+            VStack(alignment: .leading, spacing: 0) {
+                PaperEmptyState("The artwork didn't load", message: text, actionTitle: "Try again") {
+                    Task { await load() }
                 }
+                if let url {
+                    Button("Open it outside the app") { openURL(url) }
+                        .buttonStyle(.paperText(PaperColor.ink, .subhead, weight: .medium))
+                }
+                Spacer()
             }
+            .screen()
         }
+    }
+
+    private func message(_ title: String, _ text: String, action: (String, () -> Void)?) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PaperEmptyState(title, message: text, actionTitle: action?.0, action: action?.1)
+            Spacer()
+        }
+        .screen()
     }
 
     private func load() async {
@@ -229,7 +219,7 @@ private struct PDFDocumentView: UIViewRepresentable {
         view.displayDirection = .vertical
         view.maxScaleFactor = 8
         view.minScaleFactor = view.scaleFactorForSizeToFit
-        view.backgroundColor = .secondarySystemBackground
+        view.backgroundColor = UIColor(PaperColor.segment)
         view.usePageViewController(false)
         return view
     }
