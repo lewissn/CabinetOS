@@ -8,6 +8,9 @@ struct BoxListView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var boxToDelete: Box?
+    /// A box just started from the "next box" prompt, opened straight away.
+    @State private var startedBox: Box?
+    @State private var isStartingBox = false
     @EnvironmentObject private var toaster: Toaster
     @AppStorage("labels.printOnClose") private var printOnClose = true
 
@@ -39,6 +42,8 @@ struct BoxListView: View {
                     if let error = viewModel.errorMessage {
                         Notice(text: error, tone: .held).paperListRow(top: PaperSpace.xxl)
                     }
+
+                    nextStep.paperListRow(top: PaperSpace.xxl)
 
                     if !viewModel.openBoxes.isEmpty {
                         PaperSectionHeader("Open boxes").paperListRow(top: PaperSpace.section)
@@ -98,6 +103,15 @@ struct BoxListView: View {
             .refreshable {
                 await viewModel.loadBoxes()
             }
+        }
+        .navigationDestination(item: $startedBox) { box in
+            BoxDetailView(
+                box: box,
+                manifestId: viewModel.manifestId,
+                consignmentId: viewModel.consignment.id,
+                customerName: viewModel.consignment.customerName,
+                manifestName: viewModel.manifestName
+            )
         }
         .navigationDestination(for: Box.self) { box in
             BoxDetailView(
@@ -179,6 +193,38 @@ struct BoxListView: View {
                 PaperBar(Double(panelsInBoxes) / Double(expected),
                          color: panelsInBoxes >= expected ? PaperColor.success : PaperColor.accent, height: 4)
             }
+        }
+    }
+
+    /// What to do next, once every box is closed: start the next panel box
+    /// while panels are still to pack, or finish when they're all in.
+    @ViewBuilder
+    private var nextStep: some View {
+        let expected = consignment.expectedItemCount
+        if consignment.status != .complete, !failedEmpty, viewModel.openBoxes.isEmpty, !viewModel.boxes.isEmpty, expected > 0 {
+            if panelsInBoxes >= expected {
+                Notice(text: "Every panel is in a closed box.", tone: .done, glyph: .check,
+                       action: viewModel.isFinishing ? nil : "Finish") {
+                    Task { await viewModel.finishConsignment() }
+                }
+            } else {
+                let next = (viewModel.boxes.map(\.boxNumber).max() ?? 0) + 1
+                Notice(text: "\(Format.count(expected - panelsInBoxes, "panel")) still to pack.", tone: .progress, glyph: .box,
+                       action: isStartingBox ? nil : "Start box \(next)") {
+                    startNextPanelBox()
+                }
+            }
+        }
+    }
+
+    private func startNextPanelBox() {
+        guard !isStartingBox else { return }
+        isStartingBox = true
+        Task {
+            let before = Set(viewModel.boxes.map(\.id))
+            await viewModel.createBox(type: .panel, wrappedBy: appState.operatorName, deviceId: appState.deviceId)
+            isStartingBox = false
+            startedBox = viewModel.boxes.first { !before.contains($0.id) }
         }
     }
 

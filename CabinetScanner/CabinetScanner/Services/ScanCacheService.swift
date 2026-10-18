@@ -196,6 +196,15 @@ actor ScanCacheService {
             pending.lastAttemptAt = .now
             // Mirror is already correct — nothing to do.
 
+        case "ALREADY_PACKED" where serverResult.alreadyPackedInBoxId == pending.boxId:
+            // Packed in THIS box: our own earlier write coming back. A batch
+            // whose reply was lost is sent again, and the server, rightly,
+            // finds the panel already there. That is the scan succeeding, not
+            // a conflict; treating it as one sent good scans to "needs
+            // checking" and took them off the job's count.
+            pending.status = .synced
+            pending.lastAttemptAt = .now
+
         case "ALREADY_PACKED":
             // Server says this panel is in another box. Convert to conflict
             // and remove our optimistic mirror entry so dup detection no

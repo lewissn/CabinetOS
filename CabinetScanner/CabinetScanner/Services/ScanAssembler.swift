@@ -89,7 +89,16 @@ final class ScanAssembler {
             }
         }
 
-        buffer.append(contentsOf: detections)
+        // A job label's QR is a link (https://ops…/jobs/<id>), and a panel
+        // label never carries one. Read as a panel's project code it either
+        // jammed assembly or paired with the wrong cabinet, so links are left
+        // out — and if a link is all the camera can see, say what it is.
+        let panelCodes = detections.filter { !Self.isLink($0.payload) }
+        if panelCodes.isEmpty, !detections.isEmpty {
+            return .searching(hint: "That's a job label. Scan the panel's own label.")
+        }
+
+        buffer.append(contentsOf: panelCodes)
 
         // Prune detections older than the rolling buffer window
         let cutoff = now.addingTimeInterval(-bufferWindowMs / 1000.0)
@@ -108,6 +117,12 @@ final class ScanAssembler {
     /// Clear the debounce cooldown early — e.g. after navigating to the next scan in continuous mode.
     func clearCooldown() {
         lastCommitTime = nil
+    }
+
+    /// A URL or deep link rather than a panel code.
+    static func isLink(_ payload: String) -> Bool {
+        let p = payload.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return p.contains("://") || p.hasPrefix("www.")
     }
 
     // MARK: - Assembly Logic

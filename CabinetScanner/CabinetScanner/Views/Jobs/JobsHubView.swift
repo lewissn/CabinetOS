@@ -28,6 +28,7 @@ struct JobsHubView: View {
     /// path describes the whole stack, so replacing it is one state change
     /// that SwiftUI applies as written.
     @State private var path = NavigationPath()
+    @State private var scanningLabel = false
 
     private var isSearching: Bool { !search.trimmedQuery.isEmpty }
 
@@ -35,7 +36,9 @@ struct JobsHubView: View {
         NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    ScreenTitle("Jobs")
+                    ScreenTitle("Jobs") {
+                        BarIcon(glyph: .qr, label: "Scan a job label") { scanningLabel = true }
+                    }
                     PaperSearchField(text: $search.query, prompt: "Sales order, customer, Shopify number")
                         .padding(.top, PaperSpace.m)
 
@@ -71,6 +74,19 @@ struct JobsHubView: View {
             .navigationDestination(for: LinkedJob.self) { linked in
                 JobDetailView(jobId: linked.id)
             }
+            // A scanned label that carries a sales order rather than an id.
+            .navigationDestination(for: SalesOrderLookup.self) { lookup in
+                JobLookupView(salesOrder: lookup.salesOrder, customer: "Sales order \(lookup.salesOrder)")
+            }
+            .fullScreenCover(isPresented: $scanningLabel) {
+                JobLabelScannerView(
+                    onFound: { target in
+                        scanningLabel = false
+                        open(target)
+                    },
+                    onCancel: { scanningLabel = false }
+                )
+            }
             .task { await board.load() }
         }
         // Attached to the STACK, not to its root content.
@@ -91,6 +107,19 @@ struct JobsHubView: View {
         .onTabReturn {
             openPendingJob()
             if !isSearching { await board.load() }
+        }
+    }
+
+    /// Open what a scanned job label points at, replacing the stack as a
+    /// deep link does, so backing out returns to the board.
+    private func open(_ target: JobLabelTarget) {
+        search.clear()
+        switch target {
+        case .jobId(let id):
+            router.openJob(id)
+        case .salesOrder(let number):
+            path = NavigationPath()
+            path.append(SalesOrderLookup(salesOrder: number))
         }
     }
 
@@ -118,4 +147,9 @@ struct JobsHubView: View {
 /// the three apart.
 private struct LinkedJob: Hashable {
     let id: String
+}
+
+/// A job reached by its sales order number, from a scanned label.
+private struct SalesOrderLookup: Hashable {
+    let salesOrder: String
 }

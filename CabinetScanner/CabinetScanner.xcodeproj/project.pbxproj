@@ -105,6 +105,7 @@
 		D37881C4AE382A8244231BFB /* JobLookupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D387D81D346D5D189A7E9A8A /* JobLookupView.swift */; };
 		D3D5D3C8E00BC365838E999F /* LabelPrinter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E70892E9A9AC512C44A92B /* LabelPrinter.swift */; };
 		D3509E1AAD13C886506231F3 /* BoxLabels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3DC9E046F256EDBCDF72A46 /* BoxLabels.swift */; };
+		D3523148D1000759D7B553B2 /* JobLabelScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F62664C6E48BF78997C672 /* JobLabelScannerView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -206,6 +207,7 @@
 		D387D81D346D5D189A7E9A8A /* JobLookupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobLookupView.swift; sourceTree = "<group>"; };
 		D3E70892E9A9AC512C44A92B /* LabelPrinter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelPrinter.swift; sourceTree = "<group>"; };
 		D3DC9E046F256EDBCDF72A46 /* BoxLabels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoxLabels.swift; sourceTree = "<group>"; };
+		D3F62664C6E48BF78997C672 /* JobLabelScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobLabelScannerView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -405,6 +407,7 @@
 				B10000000000000000000021 /* ScannerView.swift */,
 				B10000000000000000000022 /* ScanOverlayView.swift */,
 				D384FC518A9DF2284D0F7346 /* ResultBand.swift */,
+				D3F62664C6E48BF78997C672 /* JobLabelScannerView.swift */,
 			);
 			path = Scanner;
 			sourceTree = "<group>";
@@ -567,6 +570,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D3523148D1000759D7B553B2 /* JobLabelScannerView.swift in Sources */,
 				D3509E1AAD13C886506231F3 /* BoxLabels.swift in Sources */,
 				D3D5D3C8E00BC365838E999F /* LabelPrinter.swift in Sources */,
 				D37881C4AE382A8244231BFB /* JobLookupView.swift in Sources */,

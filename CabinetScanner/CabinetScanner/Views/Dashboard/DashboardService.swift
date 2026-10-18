@@ -80,6 +80,11 @@ extension Calendar {
     static let london: Calendar = {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "Europe/London")!
+        // A UK working week starts on Monday. Without this the Gregorian
+        // default (Sunday) made "This week" in Reports start on Sunday, so it
+        // was empty every Sunday and wrong all week.
+        cal.firstWeekday = 2
+        cal.minimumDaysInFirstWeek = 4
         return cal
     }()
 }

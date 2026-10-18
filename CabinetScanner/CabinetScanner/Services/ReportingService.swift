@@ -57,9 +57,9 @@ final class ReportingService {
             + "?select=id,status,started_at,completed_at,created_at"
             + "&created_at=gte.\(Self.encodeFilterValue(start))"
             + "&created_at=lt.\(Self.encodeFilterValue(end))"
-            + "&order=created_at.asc"
+            + "&order=created_at.asc,id.asc"   // id breaks ties, so paging is stable
 
-        return try await supabaseGet(urlString)
+        return try await supabaseGetAll(urlString)
     }
 
     private func fetchBoxes(from start: String, to end: String) async throws -> [RptBoxRow] {
@@ -67,9 +67,9 @@ final class ReportingService {
             + "?select=id,consignment_id,opened_at,closed_at,created_at"
             + "&created_at=gte.\(Self.encodeFilterValue(start))"
             + "&created_at=lt.\(Self.encodeFilterValue(end))"
-            + "&order=created_at.asc"
+            + "&order=created_at.asc,id.asc"   // id breaks ties, so paging is stable
 
-        return try await supabaseGet(urlString)
+        return try await supabaseGetAll(urlString)
     }
 
     private func fetchPanels(from start: String, to end: String) async throws -> [RptPanelRow] {
@@ -77,9 +77,9 @@ final class ReportingService {
             + "?select=id,box_id,scanned_at"
             + "&scanned_at=gte.\(Self.encodeFilterValue(start))"
             + "&scanned_at=lt.\(Self.encodeFilterValue(end))"
-            + "&order=scanned_at.asc"
+            + "&order=scanned_at.asc,id.asc"   // id breaks ties, so paging is stable
 
-        return try await supabaseGet(urlString)
+        return try await supabaseGetAll(urlString)
     }
 
     /// Uses the explicit wrap event rather than inferring one from a panel
@@ -90,9 +90,9 @@ final class ReportingService {
             + "?select=id,box_type,wrapped_at,wrapped_by,wrapped_by_device,wrap_rework_count"
             + "&wrapped_at=gte.\(Self.encodeFilterValue(start))"
             + "&wrapped_at=lt.\(Self.encodeFilterValue(end))"
-            + "&order=wrapped_at.asc"
+            + "&order=wrapped_at.asc,id.asc"   // id breaks ties, so paging is stable
 
-        return try await supabaseGet(urlString)
+        return try await supabaseGetAll(urlString)
     }
 
     // MARK: - Computation
@@ -227,6 +227,26 @@ final class ReportingService {
     }
 
     // MARK: - HTTP
+
+    /// Every row, a page at a time.
+    ///
+    /// Supabase answers at most 1,000 rows per request whatever is asked for,
+    /// and says nothing when it stops. A month's panel scans pass that, so
+    /// "Panels scanned" read exactly 1,000 and everything worked out from it
+    /// was quietly short. Pages are requested until one comes back short.
+    private func supabaseGetAll<Row: Decodable>(_ urlString: String) async throws -> [Row] {
+        let pageSize = 1000
+        var rows: [Row] = []
+        var offset = 0
+        while true {
+            let page: [Row] = try await supabaseGet(urlString + "&limit=\(pageSize)&offset=\(offset)")
+            rows.append(contentsOf: page)
+            if page.count < pageSize { return rows }
+            offset += pageSize
+            // A runaway guard: 200,000 rows is far past any period here.
+            if offset >= 200 * pageSize { return rows }
+        }
+    }
 
     private func supabaseGet<T: Decodable>(_ urlString: String) async throws -> T {
         guard let url = URL(string: urlString) else {

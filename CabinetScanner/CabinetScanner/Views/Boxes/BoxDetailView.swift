@@ -38,6 +38,10 @@ struct BoxDetailView: View {
 
     private var box: Box { viewModel.box }
     private var tracksPanels: Bool { Configuration.useOfflineQueue && box.boxType == .panel }
+    private var allPanelsPacked: Bool {
+        tracksPanels && box.isOpen && !viewModel.items.isEmpty
+            && viewModel.jobExpectedCount > 0 && viewModel.jobPackedCount >= viewModel.jobExpectedCount
+    }
 
     var body: some View {
         PushedScreen(back: "Boxes", scrolls: false) {
@@ -84,6 +88,14 @@ struct BoxDetailView: View {
                     }
                     if let error = viewModel.errorMessage {
                         Notice(text: error, tone: .held).paperListRow(top: PaperSpace.l)
+                    }
+
+                    // The last panel just went in: say so, and offer the next
+                    // step rather than leaving it to be noticed.
+                    if allPanelsPacked {
+                        Notice(text: "Every panel for this job is packed. Close this box, then finish the consignment.",
+                               tone: .done, glyph: .check, action: "Close box") { showCloseSheet = true }
+                            .paperListRow(top: PaperSpace.l)
                     }
 
                     actions.paperListRow(top: PaperSpace.xxl)
