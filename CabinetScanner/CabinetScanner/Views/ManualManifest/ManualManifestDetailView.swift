@@ -1,31 +1,48 @@
+import CabinetDesign
 import SwiftUI
 
+/// A courier manifest: its boxes, Add box, and Finish manifest once every box
+/// is closed. Reads and writes go straight to Supabase, as before.
 struct ManualManifestDetailView: View {
     @ObservedObject var viewModel: ManualManifestDetailViewModel
     @State private var boxToDelete: ManualManifestBox?
     @State private var showFinishConfirm = false
     @State private var showReopenConfirm = false
 
-    var body: some View {
-        Group {
-            if viewModel.isLoading && viewModel.boxes.isEmpty {
-                ProgressView("Loading boxes...")
-            } else {
-                List {
-                    manifestInfoSection
+    private var manifest: ManualManifest { viewModel.manifest }
 
-                    if viewModel.manifest.isFinished {
-                        finishedActionsSection
-                    } else {
-                        actionsSection
+    var body: some View {
+        PushedScreen(back: "Packing", scrolls: false) {
+            if !manifest.isFinished {
+                Button("Add box") {
+                    Task { await viewModel.addBox() }
+                }
+                .buttonStyle(.paperText(PaperColor.ink, .subhead, weight: .semibold))
+            }
+        } content: {
+            List {
+                header.paperListRow()
+
+                if viewModel.isLoading && viewModel.boxes.isEmpty {
+                    LoadingLine("Loading boxes").paperListRow(top: PaperSpace.xxl)
+                } else {
+                    Headline(
+                        value: PaperFormat.int(viewModel.boxes.count),
+                        unit: viewModel.boxes.count == 1 ? "box" : "boxes",
+                        detail: viewModel.boxes.isEmpty ? nil : "\(viewModel.closedBoxes.count) closed · \(viewModel.openBoxes.count) open",
+                        style: .heroS
+                    )
+                    .paperListRow(top: PaperSpace.xxl)
+
+                    if let error = viewModel.errorMessage {
+                        Notice(text: error, tone: .held).paperListRow(top: PaperSpace.l)
                     }
 
                     if !viewModel.openBoxes.isEmpty {
-                        Section("Open Boxes") {
-                            ForEach(viewModel.openBoxes) { box in
-                                NavigationLink(value: box) {
-                                    ManualBoxRow(box: box)
-                                }
+                        PaperSectionHeader("Open boxes").paperListRow(top: PaperSpace.section)
+                        ForEach(viewModel.openBoxes) { box in
+                            ListLinkRow(value: box) { ManualBoxRow(box: box) }
+                                .paperListRow()
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button(role: .destructive) {
                                         boxToDelete = box
@@ -33,34 +50,33 @@ struct ManualManifestDetailView: View {
                                         Label("Delete", systemImage: "trash")
                                     }
                                 }
-                            }
                         }
                     }
 
                     if !viewModel.closedBoxes.isEmpty {
-                        Section("Closed Boxes") {
-                            ForEach(viewModel.closedBoxes) { box in
-                                NavigationLink(value: box) {
-                                    ManualBoxRow(box: box)
-                                }
-                            }
+                        PaperSectionHeader("Closed boxes").paperListRow(top: PaperSpace.section)
+                        ForEach(viewModel.closedBoxes) { box in
+                            ListLinkRow(value: box) { ManualBoxRow(box: box) }
+                                .paperListRow()
                         }
                     }
 
                     if viewModel.boxes.isEmpty {
-                        ContentUnavailableView(
-                            "No Boxes",
-                            systemImage: "shippingbox",
-                            description: Text("Add a box to start packing")
-                        )
+                        PaperEmptyState("No boxes yet", message: "Add a box to start packing this consignment.",
+                                        actionTitle: manifest.isFinished ? nil : "Add box") {
+                            Task { await viewModel.addBox() }
+                        }
+                        .paperListRow(top: PaperSpace.l)
                     }
-                }
-                .refreshable {
-                    await viewModel.loadBoxes()
+
+                    actions.paperListRow(top: PaperSpace.section, bottom: 120)
                 }
             }
+            .paperList()
+            .refreshable {
+                await viewModel.loadBoxes()
+            }
         }
-        .navigationTitle(viewModel.manifest.manifestName)
         .navigationDestination(for: ManualManifestBox.self) { box in
             ManualBoxDetailView(
                 viewModel: ManualBoxDetailViewModel(
@@ -71,52 +87,42 @@ struct ManualManifestDetailView: View {
                 )
             )
         }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                if !viewModel.manifest.isFinished {
-                    Button {
-                        Task { await viewModel.addBox() }
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                }
-            }
-        }
-        .alert("Delete Box?", isPresented: .init(
+        .alert(boxToDelete.map { "Delete box \($0.boxNumber)?" } ?? "Delete box?", isPresented: .init(
             get: { boxToDelete != nil },
             set: { if !$0 { boxToDelete = nil } }
         )) {
-            Button("Cancel", role: .cancel) { boxToDelete = nil }
-            Button("Delete", role: .destructive) {
+            Button("Keep box", role: .cancel) { boxToDelete = nil }
+            Button("Delete box", role: .destructive) {
                 if let box = boxToDelete {
                     Task { await viewModel.deleteBox(box) }
                 }
                 boxToDelete = nil
             }
         } message: {
-            Text("This will permanently delete the box and all its contents.")
+            Text("The box and everything in it are deleted. This can't be undone.")
         }
-        .alert("Finish Manifest?", isPresented: $showFinishConfirm) {
+        .alert("Finish this manifest?", isPresented: $showFinishConfirm) {
             Button("Cancel", role: .cancel) {}
-            Button("Finish") {
+            Button("Finish manifest") {
                 Task { await viewModel.finishManifest() }
             }
         } message: {
-            Text("This will lock the manifest. You can reopen it later if needed.")
+            Text("This locks the manifest. You can reopen it later if needed.")
         }
-        .alert("Reopen Manifest?", isPresented: $showReopenConfirm) {
+        .alert("Reopen this manifest?", isPresented: $showReopenConfirm) {
             Button("Cancel", role: .cancel) {}
-            Button("Reopen") {
+            Button("Reopen manifest") {
                 Task { await viewModel.reopenManifest() }
             }
         } message: {
-            Text("This will unlock the manifest for editing.")
+            Text("This unlocks the manifest for editing.")
         }
         .sheet(isPresented: $viewModel.showSummary) {
             ManualManifestSummaryView(
                 manifest: viewModel.manifest,
                 boxes: viewModel.boxes
             )
+            .paperSheet()
         }
         .overlay(alignment: .bottom) {
             ToastView(message: $viewModel.toastMessage)
@@ -126,91 +132,52 @@ struct ManualManifestDetailView: View {
         }
     }
 
-    private var manifestInfoSection: some View {
-        Section {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    if let courier = viewModel.manifest.courier, !courier.isEmpty {
-                        HStack(spacing: 6) {
-                            Image(systemName: "truck.box")
-                                .foregroundStyle(.blue)
-                            Text(courier)
-                                .font(.subheadline.weight(.semibold))
-                        }
-                    }
-                    if let note = viewModel.manifest.note, !note.isEmpty {
-                        Text(note)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+    private var header: some View {
+        VStack(alignment: .leading, spacing: PaperSpace.s) {
+            HStack(spacing: PaperSpace.s) {
+                if let courier = manifest.courier, !courier.isEmpty {
+                    Text(courier).paperType(.footnote).foregroundStyle(PaperColor.secondary)
                 }
-                Spacer()
-                if viewModel.manifest.isFinished {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.circle.fill")
-                        Text("Finished")
-                    }
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.green)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(.green.opacity(0.15))
-                    .clipShape(Capsule())
+                if let ref = manifest.jobReference, !ref.isEmpty {
+                    Code(ref)
                 }
+            }
+            Text(manifest.manifestName)
+                .paperType(.largeTitle)
+                .foregroundStyle(PaperColor.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            StatusText(manifest.isFinished ? "Finished" : "Open", tone: manifest.isFinished ? .done : .progress, style: .subhead)
+            if let note = manifest.note, !note.isEmpty {
+                Text(note)
+                    .paperType(.subhead)
+                    .foregroundStyle(PaperColor.body)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, PaperSpace.xs)
             }
         }
     }
 
-    private var actionsSection: some View {
-        Section {
-            Button {
-                showFinishConfirm = true
-            } label: {
-                HStack {
-                    Image(systemName: "checkmark.circle.fill")
-                    Text("Finish Manifest")
-                }
-                .font(.headline)
-                .frame(maxWidth: .infinity)
+    @ViewBuilder
+    private var actions: some View {
+        if manifest.isFinished {
+            VStack(spacing: PaperSpace.s) {
+                Button("View summary") { viewModel.showSummary = true }
+                    .buttonStyle(.paperPill(.ink, .large, fullWidth: true))
+                Button("Reopen manifest") { showReopenConfirm = true }
+                    .buttonStyle(.paperText(PaperColor.secondary, .subhead, weight: .medium))
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.green)
-            .disabled(!viewModel.canFinish)
-            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16))
-            .listRowBackground(Color.clear)
-        }
-    }
-
-    private var finishedActionsSection: some View {
-        Section {
-            Button {
-                viewModel.showSummary = true
-            } label: {
-                HStack {
-                    Image(systemName: "doc.text")
-                    Text("View Summary")
+        } else {
+            VStack(alignment: .leading, spacing: PaperSpace.s) {
+                Button("Finish manifest") { showFinishConfirm = true }
+                    .buttonStyle(.paperPill(.accent, .floor, fullWidth: true))
+                    .disabled(!viewModel.canFinish)
+                if !viewModel.canFinish && !viewModel.boxes.isEmpty {
+                    Text("Close every box to finish the manifest.")
+                        .paperType(.footnote)
+                        .foregroundStyle(PaperColor.tertiary)
                 }
-                .font(.headline)
-                .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-            .listRowBackground(Color.clear)
-
-            Button {
-                showReopenConfirm = true
-            } label: {
-                HStack {
-                    Image(systemName: "lock.open.fill")
-                    Text("Reopen Manifest")
-                }
-                .font(.subheadline)
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .tint(.orange)
-            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16))
-            .listRowBackground(Color.clear)
         }
     }
 }
@@ -220,41 +187,25 @@ struct ManualManifestDetailView: View {
 struct ManualBoxRow: View {
     let box: ManualManifestBox
 
+    private var detail: String {
+        if let dims = box.dimensionsDisplay {
+            return [dims, box.weightDisplay].compactMap { $0 }.joined(separator: " · ")
+        }
+        return box.isOpen ? "No size yet" : "Closed"
+    }
+
     var body: some View {
-        HStack {
-            Image(systemName: "shippingbox")
-                .font(.title2)
-                .foregroundStyle(box.isClosed ? Color.secondary : Color.blue)
-                .frame(width: 36)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Box \(box.boxNumber)")
-                    .font(.headline)
-
-                if let dims = box.dimensionsDisplay {
-                    HStack(spacing: 8) {
-                        Text(dims)
-                        if let weight = box.weightDisplay {
-                            Text("·")
-                            Text(weight)
-                        }
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                } else {
-                    Text(box.isOpen ? "Open" : "Closed")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+        RowContainer {
+            HStack(alignment: .center, spacing: PaperSpace.m) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Box \(box.boxNumber)").paperType(.body).foregroundStyle(PaperColor.ink)
+                    Text(detail).paperType(.footnote, numeric: true).foregroundStyle(PaperColor.secondary).lineLimit(1)
                 }
-            }
-
-            Spacer()
-
-            if box.isClosed {
-                Image(systemName: "lock.fill")
-                    .foregroundStyle(.secondary)
+                Spacer(minLength: PaperSpace.m)
+                StatusText(box.isClosed ? "Closed" : "Open", tone: box.isClosed ? .done : .progress)
+                PaperIcon(.chevronRight, size: 14, color: PaperColor.faint)
             }
         }
-        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
     }
 }

@@ -1,6 +1,7 @@
+import CabinetDesign
 import SwiftUI
 
-/// List of pending / syncing / synced / rejected scans for a single box.
+/// List of pending / syncing / rejected scans for a single box.
 /// Includes a "Re-sync parts list" action to force-refresh the cached registry.
 struct PendingSyncView: View {
     let boxId: String
@@ -15,94 +16,87 @@ struct PendingSyncView: View {
     private let queue = ScanQueueService.shared
 
     var body: some View {
-        List {
-            if !pending.isEmpty {
-                Section("Pending sync (\(pending.count))") {
-                    ForEach(pending, id: \.localId) { row(for: $0) }
+        PushedScreen(back: "Box", scrolls: false) {
+            Menu {
+                Button {
+                    Task { await queue.flush() }
+                } label: {
+                    Label("Sync now", systemImage: "arrow.triangle.2.circlepath")
                 }
-            }
-            if !syncing.isEmpty {
-                Section("Syncing (\(syncing.count))") {
-                    ForEach(syncing, id: \.localId) { row(for: $0) }
-                }
-            }
-            if !rejected.isEmpty {
-                Section("Rejected (\(rejected.count))") {
-                    ForEach(rejected, id: \.localId) { row(for: $0) }
-                        .onDelete(perform: discardRejected)
-                }
-            }
-            if pending.isEmpty && syncing.isEmpty && rejected.isEmpty {
-                ContentUnavailableView(
-                    "All caught up",
-                    systemImage: "checkmark.circle",
-                    description: Text("No scans waiting to sync.")
-                )
-            }
-        }
-        .navigationTitle("Sync status")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button {
-                        Task { await queue.flush() }
-                    } label: {
-                        Label("Sync now", systemImage: "arrow.triangle.2.circlepath")
-                    }
-                    Button {
-                        Task {
-                            await cache.loadRegistry(manifestId: manifestId, projectName: projectName, force: true)
-                        }
-                    } label: {
-                        Label("Re-sync parts list", systemImage: "arrow.down.circle")
+                Button {
+                    Task {
+                        await cache.loadRegistry(manifestId: manifestId, projectName: projectName, force: true)
                     }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Label("Re-sync parts list", systemImage: "arrow.down.circle")
+                }
+            } label: {
+                PaperIcon(.more, size: 22)
+                    .frame(width: PaperSpace.tap, height: PaperSpace.tap)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Sync options")
+        } content: {
+            List {
+                ScreenTitle("Sync status").paperListRow()
+
+                if pending.isEmpty && syncing.isEmpty && rejected.isEmpty {
+                    PaperEmptyState("All caught up", message: "No scans are waiting to sync.")
+                        .paperListRow(top: PaperSpace.l)
+                }
+                if !pending.isEmpty {
+                    PaperSectionHeader("Waiting to sync") { count(pending) }.paperListRow(top: PaperSpace.xxl)
+                    ForEach(pending, id: \.localId) { row(for: $0).paperListRow() }
+                }
+                if !syncing.isEmpty {
+                    PaperSectionHeader("Syncing") { count(syncing) }.paperListRow(top: PaperSpace.xxl)
+                    ForEach(syncing, id: \.localId) { row(for: $0).paperListRow() }
+                }
+                if !rejected.isEmpty {
+                    PaperSectionHeader("Rejected") { count(rejected) }.paperListRow(top: PaperSpace.xxl)
+                    ForEach(rejected, id: \.localId) { row(for: $0).paperListRow() }
+                        .onDelete(perform: discardRejected)
+                    Text("Swipe left on a rejected scan to discard it.")
+                        .paperType(.footnote).foregroundStyle(PaperColor.tertiary)
+                        .padding(.top, PaperSpace.m)
+                        .paperListRow()
                 }
             }
+            .paperList()
+            .refreshable { await reload() }
         }
         .task { await reload() }
-        .refreshable { await reload() }
+    }
+
+    private func count(_ rows: [PendingScan]) -> some View {
+        Text("\(rows.count)").paperType(.footnote, numeric: true).foregroundStyle(PaperColor.tertiary)
     }
 
     private func row(for s: PendingScan) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("\(s.cabinetName) — Part \(s.partNumber)")
-                .font(.body.weight(.semibold))
-            Text(s.projectName).font(.caption).foregroundStyle(.secondary)
-            HStack(spacing: 6) {
-                Image(systemName: icon(for: s.status))
-                    .foregroundStyle(color(for: s.status))
-                Text(label(for: s.status))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Text(s.scannedAt, style: .time)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+        RowContainer {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
+                    Code(s.cabinetName, color: PaperColor.ink, size: 14)
+                    Text("Part \(s.partNumber)").paperType(.body).foregroundStyle(PaperColor.ink)
+                    Spacer(minLength: PaperSpace.m)
+                    StatusText(label(for: s.status), tone: tone(for: s.status))
+                }
+                Text("\(s.projectName) · \(Format.time(s.scannedAt))")
+                    .paperType(.footnote, numeric: true)
+                    .foregroundStyle(PaperColor.secondary)
                 if let msg = s.errorMessage {
-                    Text(msg).font(.caption2).foregroundStyle(.red)
+                    Text(msg).paperType(.footnote).foregroundStyle(Tone.held.textColor)
                 }
             }
         }
+        .accessibilityElement(children: .combine)
     }
 
-    private func icon(for status: PendingScanStatus) -> String {
+    private func tone(for status: PendingScanStatus) -> Tone {
         switch status {
-        case .pending: return "clock"
-        case .syncing: return "arrow.triangle.2.circlepath"
-        case .synced: return "checkmark.circle.fill"
-        case .conflict: return "exclamationmark.triangle.fill"
-        case .rejected: return "xmark.octagon.fill"
-        }
-    }
-
-    private func color(for status: PendingScanStatus) -> Color {
-        switch status {
-        case .pending: return .blue
-        case .syncing: return .blue
-        case .synced: return .green
-        case .conflict: return .red
-        case .rejected: return .red
+        case .pending, .syncing: .progress
+        case .synced: .done
+        case .conflict, .rejected: .held
         }
     }
 

@@ -132,25 +132,36 @@ private struct SettingsPlaceholderView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Section("Station") {
-                    LabeledContent("Device ID", value: String(appState.deviceId.prefix(8)) + "...")
-                    LabeledContent("Station", value: appState.stationId)
-                    LabeledContent("Operator", value: appState.operatorName.isEmpty ? "—" : appState.operatorName)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ScreenTitle("Settings")
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        PaperSectionHeader("Station")
+                        FactRow(label: "Station", value: appState.stationId)
+                        FactRow(label: "Operator", value: appState.operatorName.isEmpty ? "–" : appState.operatorName)
+                        FactRow(label: "Device ID", value: String(appState.deviceId.prefix(8)) + "…")
+                    }
+                    .section(top: PaperSpace.xxl)
+
+                    DeviceTokenSection().section()
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        PaperSectionHeader("Server")
+                        FactRow(label: "Mode", value: Configuration.apiMode.rawValue.capitalized)
+                        FactRow(label: "Host", value: Configuration.baseURL)
+                    }
+                    .section()
+
+                    #if DEBUG
+                    DebugHostSection().section()
+                    #endif
                 }
-
-                Section("API") {
-                    LabeledContent("Mode", value: Configuration.apiMode.rawValue.capitalized)
-                    LabeledContent("Host", value: Configuration.baseURL)
-                }
-
-                #if DEBUG
-                DebugHostSection()
-                #endif
-
-                DeviceTokenSection()
+                .screen()
+                .padding(.bottom, 120)
             }
-            .navigationTitle("Settings")
+            .scrollDismissesKeyboard(.interactively)
+            .paperRootScreen()
         }
     }
 }
@@ -179,27 +190,44 @@ private struct DeviceTokenSection: View {
 
     private let service = JobIndexService()
 
+    private var status: (String, Tone) {
+        if didSave { return ("Saved", .done) }
+        if Configuration.hasDeviceAPIToken { return ("Set", .neutral) }
+        return ("Not set", .soon)
+    }
+
     var body: some View {
-        Section {
+        VStack(alignment: .leading, spacing: 0) {
+            PaperSectionHeader("Job search access") {
+                StatusText(status.0, tone: status.1)
+            }
+
             // A link that arrived before this device could act on it. Saying
             // so is the difference between "Settings opened for no reason" and
             // "this is the one thing standing between you and that job".
             if router.isWaitingForAccess {
-                Label(
-                    "A job link is waiting. Add this device's access token and it will open.",
-                    systemImage: "link.badge.plus"
-                )
-                .font(.caption)
-                .foregroundStyle(.orange)
+                Notice(text: "A job link is waiting. Add this device's access token and it will open.", tone: .soon)
+                    .padding(.top, PaperSpace.s)
             }
 
-            SecureField("Paste access token", text: $token)
-                .textContentType(.password)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-                .focused($isFocused)
+            VStack(alignment: .leading, spacing: PaperSpace.xs) {
+                PaperLabel("Access token")
+                SecureField("Paste the access token", text: $token)
+                    .paperType(.body)
+                    .foregroundStyle(PaperColor.ink)
+                    .textContentType(.password)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .focused($isFocused)
+                    .padding(.bottom, PaperSpace.xs)
+                    .overlay(alignment: .bottom) {
+                        Rectangle().fill(isFocused ? PaperColor.accent : PaperColor.dot).frame(height: isFocused ? 1.5 : 1)
+                    }
+                    .accessibilityLabel("Access token")
+            }
+            .padding(.top, PaperSpace.l)
 
-            HStack {
+            HStack(spacing: PaperSpace.m) {
                 Button("Save") {
                     Configuration.setDeviceAPIToken(token)
                     // Show what was actually stored, so a stray "Bearer " or a
@@ -216,61 +244,48 @@ private struct DeviceTokenSection: View {
                         }
                     }
                 }
+                .buttonStyle(.paperPill(.accent, .regular))
                 .disabled(token.trimmingCharacters(in: .whitespaces).isEmpty)
 
-                Spacer()
-
-                if didSave {
-                    Label("Saved", systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.green)
-                } else if Configuration.hasDeviceAPIToken {
-                    Label("Set", systemImage: "checkmark.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Label("Not set", systemImage: "exclamationmark.circle")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-            }
-
-            Button {
-                Task { await runCheck() }
-            } label: {
-                HStack {
-                    Label("Check access", systemImage: "stethoscope")
+                Button {
+                    Task { await runCheck() }
+                } label: {
                     if isChecking {
-                        Spacer()
-                        ProgressView()
+                        ProgressView().tint(PaperColor.ink)
+                    } else {
+                        Text("Check access")
                     }
                 }
+                .buttonStyle(.paperPill(.outline, .regular))
+                .disabled(isChecking)
+
+                Spacer(minLength: 0)
             }
-            .disabled(isChecking)
+            .padding(.top, PaperSpace.l)
+
+            if let check {
+                DeviceCheckSummary(result: check).padding(.top, PaperSpace.l)
+            } else if let checkError {
+                Notice(text: checkError, tone: .soon).padding(.top, PaperSpace.l)
+            }
 
             if Configuration.hasDeviceAPIToken {
-                Button(role: .destructive) {
+                Button("Remove token", role: .destructive) {
                     Configuration.setDeviceAPIToken(nil)
                     token = ""
                     didSave = false
                     check = nil
                     checkError = nil
-                } label: {
-                    Label("Remove token", systemImage: "trash")
                 }
+                .buttonStyle(.paperText(PaperColor.danger, .subhead, weight: .medium))
+                .padding(.top, PaperSpace.s)
             }
 
-            if let check {
-                DeviceCheckSummary(result: check)
-            } else if let checkError {
-                Label(checkError, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
-        } header: {
-            Text("Job Search Access")
-        } footer: {
-            Text("Needed for Jobs, the production board and despatch alerts. Packaging works without it. Either the whole \"name:token\" line or just the token will do.")
+            Text("Needed for Jobs, the production board and despatch alerts. Packing works without it. Either the whole \"name:token\" line or just the token will do.")
+                .paperType(.footnote)
+                .foregroundStyle(PaperColor.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, PaperSpace.m)
         }
         .onChange(of: token) { _, _ in
             didSave = false
@@ -297,38 +312,29 @@ private struct DeviceCheckSummary: View {
     let result: DeviceCheckResult
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label {
-                Text(result.authenticated ? "Access confirmed" : "No access")
-                    .font(.subheadline.weight(.semibold))
-            } icon: {
-                Image(systemName: result.authenticated
-                      ? "checkmark.seal.fill"
-                      : "xmark.seal.fill")
-                .foregroundStyle(result.authenticated ? .green : .red)
-            }
+        VStack(alignment: .leading, spacing: PaperSpace.xs) {
+            StatusText(result.authenticated ? "Access confirmed" : "No access",
+                       tone: result.authenticated ? .done : .held, style: .subhead)
 
             if let message = result.message {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(message).paperType(.footnote).foregroundStyle(PaperColor.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let next = result.nextStep, !result.authenticated {
-                Text(next)
-                    .font(.caption)
-                    .foregroundStyle(.primary)
+                Text(next).paperType(.footnote).foregroundStyle(PaperColor.ink)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let server = result.server {
                 // The number that separates "my token is wrong" from "that
                 // deploy has no tokens at all".
-                Text("Server: \(server.environment) · \(server.deviceTokensConfigured) device token\(server.deviceTokensConfigured == 1 ? "" : "s") configured")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                Text("Server: \(server.environment) · \(Format.count(server.deviceTokensConfigured, "device token")) configured")
+                    .paperType(.caption, numeric: true)
+                    .foregroundStyle(PaperColor.tertiary)
             }
         }
-        .padding(.vertical, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -344,31 +350,35 @@ private struct DebugHostSection: View {
     @State private var host: String = Configuration.debugHostOverride ?? ""
 
     var body: some View {
-        Section {
-            TextField("http://192.168.1.10:3000", text: $host)
+        VStack(alignment: .leading, spacing: 0) {
+            PaperSectionHeader("Development host")
+            PaperUnderlineField("Host", text: $host, placeholder: "http://192.168.1.10:3000", keyboard: .URL)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
-                .keyboardType(.URL)
+                .padding(.top, PaperSpace.s)
 
-            HStack {
+            HStack(spacing: PaperSpace.m) {
                 Button("Use this host") {
                     Configuration.debugHostOverride = host
                     host = Configuration.debugHostOverride ?? ""
                 }
+                .buttonStyle(.paperPill(.outline, .regular))
                 .disabled(host.trimmingCharacters(in: .whitespaces).isEmpty)
-
-                Spacer()
 
                 Button("Reset to production") {
                     Configuration.debugHostOverride = nil
                     host = ""
                 }
-                .foregroundStyle(.red)
+                .buttonStyle(.paperText(PaperColor.danger, .subhead, weight: .medium))
+                Spacer(minLength: 0)
             }
-        } header: {
-            Text("Development host")
-        } footer: {
+            .padding(.top, PaperSpace.l)
+
             Text("Debug builds only. Points the app at a machine running the Ops server locally; not present in a release build.")
+                .paperType(.footnote)
+                .foregroundStyle(PaperColor.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, PaperSpace.m)
         }
     }
 }

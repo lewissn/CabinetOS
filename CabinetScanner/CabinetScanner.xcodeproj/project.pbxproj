@@ -101,6 +101,7 @@
 		D3025994284AEFCF5C221CEE /* StepTrack.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3AB64AA893F607BB813E9A7 /* StepTrack.swift */; };
 		D38D35953C9B0D30F555E649 /* DashboardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3DE6E2F57F2142B1D1A0E98 /* DashboardService.swift */; };
 		D39D188E30E5744B513A84BD /* DashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3B37729B29E1F4D83ABC391 /* DashboardViewModel.swift */; };
+		D383C3532099688F4EE80405 /* StockData.swift in Sources */ = {isa = PBXBuildFile; fileRef = D328EDBE999BB69B80A01375 /* StockData.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -198,6 +199,7 @@
 		D3AB64AA893F607BB813E9A7 /* StepTrack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StepTrack.swift; sourceTree = "<group>"; };
 		D3DE6E2F57F2142B1D1A0E98 /* DashboardService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardService.swift; sourceTree = "<group>"; };
 		D3B37729B29E1F4D83ABC391 /* DashboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardViewModel.swift; sourceTree = "<group>"; };
+		D328EDBE999BB69B80A01375 /* StockData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockData.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -216,6 +218,7 @@
 			isa = PBXGroup;
 			children = (
 				1D6DA5692F4F5DDE00DEE6A8 /* StockView.swift */,
+				D328EDBE999BB69B80A01375 /* StockData.swift */,
 			);
 			path = Stock;
 			sourceTree = "<group>";
@@ -555,6 +558,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D383C3532099688F4EE80405 /* StockData.swift in Sources */,
 				D39D188E30E5744B513A84BD /* DashboardViewModel.swift in Sources */,
 				D38D35953C9B0D30F555E649 /* DashboardService.swift in Sources */,
 				D3025994284AEFCF5C221CEE /* StepTrack.swift in Sources */,

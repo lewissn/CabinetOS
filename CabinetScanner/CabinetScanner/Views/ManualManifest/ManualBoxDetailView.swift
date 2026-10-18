@@ -1,5 +1,8 @@
+import CabinetDesign
 import SwiftUI
 
+/// A box on a courier manifest: what's in it, Scan / Add item, and Close
+/// box; once closed, its size and weight. Writes go straight to Supabase.
 struct ManualBoxDetailView: View {
     @ObservedObject var viewModel: ManualBoxDetailViewModel
     @EnvironmentObject var appState: AppState
@@ -11,30 +14,57 @@ struct ManualBoxDetailView: View {
     @State private var showDimensionsSheet = false
     @State private var itemToDelete: ManualManifestItem?
 
+    private var box: ManualManifestBox { viewModel.box }
+    private var canEdit: Bool { box.isOpen && !viewModel.isManifestFinished }
+
     var body: some View {
-        VStack(spacing: 0) {
-            if viewModel.items.isEmpty && !viewModel.isLoading {
-                Spacer()
-                VStack(spacing: 12) {
-                    Image(systemName: "barcode.viewfinder")
-                        .font(.system(size: 48))
-                        .foregroundStyle(.secondary)
-                    Text("No items yet")
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                    if viewModel.box.isOpen && !viewModel.isManifestFinished {
-                        Text("Scan labels or add items manually")
-                            .font(.subheadline)
-                            .foregroundStyle(.tertiary)
+        PushedScreen(back: "Manifest", scrolls: false) {
+            BarIcon(glyph: .printer, label: "Print label") { printBoxLabel() }
+            if box.isClosed && !viewModel.isManifestFinished {
+                Menu {
+                    Button {
+                        showDimensionsSheet = true
+                    } label: {
+                        Label(box.dimensionsDisplay != nil ? "Change size and weight" : "Add size and weight", systemImage: "ruler")
                     }
+                    Button {
+                        Task { await viewModel.reopenBox() }
+                    } label: {
+                        Label("Reopen box", systemImage: "lock.open")
+                    }
+                } label: {
+                    PaperIcon(.more, size: 22)
+                        .frame(width: PaperSpace.tap, height: PaperSpace.tap)
+                        .contentShape(Rectangle())
                 }
-                Spacer()
-            } else {
-                List {
+                .accessibilityLabel("More")
+            }
+        } content: {
+            List {
+                header.paperListRow()
+
+                PaperFigure(PaperFormat.int(viewModel.items.reduce(0) { $0 + $1.qty }), unit: "in this box", style: .heroS)
+                    .paperListRow(top: PaperSpace.xxl)
+
+                if canEdit {
+                    openBoxActions.paperListRow(top: PaperSpace.xxl)
+                } else if box.isClosed {
+                    closedBoxInfo.paperListRow(top: PaperSpace.xxl)
+                }
+
+                PaperSectionHeader("In the box").paperListRow(top: PaperSpace.section)
+                if viewModel.items.isEmpty {
+                    Text(viewModel.isLoading ? "Loading" : (canEdit ? "Nothing yet. Scan a label or add an item." : "Nothing was put in this box."))
+                        .paperType(.subhead)
+                        .foregroundStyle(PaperColor.secondary)
+                        .padding(.vertical, PaperSpace.m)
+                        .paperListRow()
+                } else {
                     ForEach(viewModel.items) { item in
                         ManualItemRow(item: item)
+                            .paperListRow()
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                if viewModel.box.isOpen && !viewModel.isManifestFinished {
+                                if canEdit {
                                     Button(role: .destructive) {
                                         itemToDelete = item
                                     } label: {
@@ -44,54 +74,26 @@ struct ManualBoxDetailView: View {
                             }
                     }
                 }
-                .refreshable {
-                    await viewModel.loadItems()
+
+                if canEdit {
+                    Button("Close box \(box.boxNumber)") { showCloseBoxConfirm = true }
+                        .buttonStyle(.paperPill(.ink, .floor, fullWidth: true))
+                        .paperListRow(top: PaperSpace.section, bottom: 120)
+                } else {
+                    Color.clear.frame(height: 120).paperListRow()
                 }
             }
-
-            if viewModel.box.isOpen && !viewModel.isManifestFinished {
-                openBoxActions
-            } else if viewModel.box.isClosed {
-                closedBoxInfo
+            .paperList()
+            .refreshable {
+                await viewModel.loadItems()
             }
         }
-        .navigationTitle("Box \(viewModel.box.boxNumber)")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button {
-                        printBoxLabel()
-                    } label: {
-                        Label("Print Label", systemImage: "printer")
-                    }
-
-                    if viewModel.box.isClosed && !viewModel.isManifestFinished {
-                        Button {
-                            showDimensionsSheet = true
-                        } label: {
-                            Label(
-                                viewModel.box.dimensionsDisplay != nil ? "Edit Dimensions" : "Add Dimensions",
-                                systemImage: "ruler"
-                            )
-                        }
-
-                        Button {
-                            Task { await viewModel.reopenBox() }
-                        } label: {
-                            Label("Reopen Box", systemImage: "lock.open.fill")
-                        }
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-            }
-        }
-        .alert("Delete Item?", isPresented: .init(
+        .alert("Remove this item?", isPresented: .init(
             get: { itemToDelete != nil },
             set: { if !$0 { itemToDelete = nil } }
         )) {
-            Button("Cancel", role: .cancel) { itemToDelete = nil }
-            Button("Delete", role: .destructive) {
+            Button("Keep it", role: .cancel) { itemToDelete = nil }
+            Button("Remove item", role: .destructive) {
                 if let item = itemToDelete {
                     Task { await viewModel.deleteItem(item) }
                 }
@@ -99,7 +101,7 @@ struct ManualBoxDetailView: View {
             }
         } message: {
             if let item = itemToDelete {
-                Text("Remove \(item.displayName) from this box?")
+                Text("\(item.displayName) comes out of this box.")
             }
         }
         .fullScreenCover(isPresented: $showScanner) {
@@ -116,20 +118,22 @@ struct ManualBoxDetailView: View {
             AddManualItemSheet { name, qty in
                 Task { await viewModel.addManualItem(name: name, quantity: qty) }
             }
+            .paperSheet(detents: [.medium])
         }
         .sheet(isPresented: $showDimensionsSheet) {
             DimensionsSheet(
-                initialLength: viewModel.box.lengthMM,
-                initialWidth: viewModel.box.widthMM,
-                initialHeight: viewModel.box.heightMM,
-                initialWeight: viewModel.box.weightKG
+                initialLength: box.lengthMM,
+                initialWidth: box.widthMM,
+                initialHeight: box.heightMM,
+                initialWeight: box.weightKG
             ) { length, width, height, weight in
                 Task { await viewModel.updateDimensions(lengthMM: length, widthMM: width, heightMM: height, weightKG: weight) }
             }
+            .paperSheet(detents: [.medium, .large])
         }
-        .alert("Close Box?", isPresented: $showCloseBoxConfirm) {
+        .alert("Close box \(box.boxNumber)?", isPresented: $showCloseBoxConfirm) {
             Button("Cancel", role: .cancel) {}
-            Button("Close") {
+            Button("Close box") {
                 Task {
                     let closed = await viewModel.closeBoxSimple()
                     if closed {
@@ -139,101 +143,56 @@ struct ManualBoxDetailView: View {
                 }
             }
         } message: {
-            Text("This will close the box. You can add dimensions and weight afterwards.")
+            Text("You can add its size and weight afterwards.")
         }
         .overlay(alignment: .bottom) {
-            ToastView(message: $viewModel.toastMessage)
-                .padding(.bottom, 120)
+            ToastView(message: $viewModel.toastMessage, glyph: viewModel.toastMessage?.hasPrefix("Duplicate") == true ? nil : .check)
         }
         .task {
             await viewModel.loadItems()
         }
     }
 
-    // MARK: - Open box action buttons
+    private var header: some View {
+        VStack(alignment: .leading, spacing: PaperSpace.s) {
+            Text(viewModel.manifestName).paperType(.footnote).foregroundStyle(PaperColor.secondary).lineLimit(1)
+            Text("Box \(box.boxNumber)")
+                .paperType(.largeTitle)
+                .foregroundStyle(PaperColor.ink)
+                .accessibilityAddTraits(.isHeader)
+            StatusText(box.isClosed ? "Closed" : "Open", tone: box.isClosed ? .done : .progress, style: .subhead)
+        }
+    }
+
+    // MARK: - Open box actions
 
     private var openBoxActions: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                Button {
-                    showScanner = true
-                } label: {
-                    Label("Scan Label", systemImage: "barcode.viewfinder")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(.blue)
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                }
-
-                Button {
-                    showManualItemSheet = true
-                } label: {
-                    Label("Add Item", systemImage: "plus.circle")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(.green)
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                }
-            }
-
+        HStack(spacing: PaperSpace.m) {
             Button {
-                showCloseBoxConfirm = true
+                showScanner = true
             } label: {
-                Label("Close Box", systemImage: "lock.fill")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(.orange)
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                Label { Text("Scan label") } icon: { PaperIcon(.scan, size: 20, color: PaperColor.onAccent) }
             }
+            .buttonStyle(.paperPill(.accent, .floor, fullWidth: true))
+
+            Button("Add item") { showManualItemSheet = true }
+                .buttonStyle(.paperPill(.outline, .floor))
         }
-        .padding()
     }
 
     // MARK: - Closed box info
 
+    @ViewBuilder
     private var closedBoxInfo: some View {
-        VStack(spacing: 8) {
-            if viewModel.box.dimensionsDisplay != nil || viewModel.box.weightDisplay != nil {
-                HStack {
-                    if let dims = viewModel.box.dimensionsDisplay {
-                        Label(dims, systemImage: "ruler")
-                            .font(.subheadline)
-                    }
-                    Spacer()
-                    if let weight = viewModel.box.weightDisplay {
-                        Label(weight, systemImage: "scalemass")
-                            .font(.subheadline)
-                    }
-                }
-                .foregroundStyle(.secondary)
-            } else if !viewModel.isManifestFinished {
-                Button {
-                    showDimensionsSheet = true
-                } label: {
-                    Label("Add Dimensions & Weight", systemImage: "ruler")
-                        .font(.subheadline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                }
-                .buttonStyle(.bordered)
-                .tint(.blue)
+        if box.dimensionsDisplay != nil || box.weightDisplay != nil {
+            VStack(alignment: .leading, spacing: 0) {
+                if let dims = box.dimensionsDisplay { FactRow(label: "Size", value: dims) }
+                if let weight = box.weightDisplay { FactRow(label: "Weight", value: weight) }
             }
-
-            HStack(spacing: 6) {
-                Image(systemName: "lock.fill")
-                Text("Box Closed")
-            }
-            .font(.headline)
-            .foregroundStyle(.green)
+        } else if !viewModel.isManifestFinished {
+            Button("Add size and weight") { showDimensionsSheet = true }
+                .buttonStyle(.paperPill(.accent, .large, fullWidth: true))
         }
-        .padding()
-        .background(.green.opacity(0.08))
     }
 
     // MARK: - Print
@@ -277,38 +236,24 @@ struct ManualItemRow: View {
     let item: ManualManifestItem
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(item.displayName)
-                        .font(.body.weight(.bold))
-
-                    if item.isManual {
-                        Text("Manual")
-                            .font(.caption2.weight(.bold))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(.purple.opacity(0.15))
-                            .foregroundStyle(.purple)
-                            .clipShape(Capsule())
+        RowContainer {
+            HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: PaperSpace.s) {
+                        Text(item.displayName).paperType(.body).foregroundStyle(PaperColor.ink)
+                        if item.isManual {
+                            Text("added by hand").paperType(.caption).foregroundStyle(PaperColor.tertiary)
+                        }
+                    }
+                    if let detail = item.detailLine {
+                        Text(detail).paperType(.footnote, numeric: true).foregroundStyle(PaperColor.secondary)
                     }
                 }
-
-                if let detail = item.detailLine {
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Spacer(minLength: PaperSpace.m)
+                Text("× \(item.qty)").paperType(.subhead, numeric: true).foregroundStyle(PaperColor.body)
             }
-
-            Spacer()
-
-            Text("×\(item.qty)")
-                .font(.body.weight(.semibold))
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -365,55 +310,36 @@ struct ManualBoxScannerView: View {
 
     var body: some View {
         ZStack {
+            PaperColor.inverse.ignoresSafeArea()
+
             CameraPreviewView(session: coordinator.cameraService.captureSession)
                 .ignoresSafeArea()
 
             ScanOverlayView()
                 .ignoresSafeArea()
+                .allowsHitTesting(false)
 
-            VStack {
+            VStack(spacing: 0) {
                 HStack {
-                    Button {
+                    Button("Cancel") {
                         coordinator.stop()
                         onDismiss()
-                    } label: {
-                        Text("Cancel")
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Capsule())
                     }
+                    .buttonStyle(.paperPill(.paper, .compact))
 
                     Spacer()
 
-                    Button {
-                        coordinator.cameraService.toggleTorch()
-                    } label: {
-                        Image(systemName: coordinator.cameraService.isTorchOn ? "flashlight.on.fill" : "flashlight.off.fill")
-                            .font(.title2)
-                            .foregroundStyle(.white)
-                            .padding(12)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Circle())
-                    }
+                    ManualTorchButton(camera: coordinator.cameraService)
                 }
-                .padding()
+                .paperMargins()
+                .padding(.top, PaperSpace.l)
 
                 Spacer()
 
-                HStack(spacing: 8) {
-                    Image(systemName: "viewfinder")
-                    Text(coordinator.scanHint)
-                }
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .padding(.bottom, 60)
+                ResultBand(outcome: .ready(hint: coordinator.scanHint))
+                    .frame(maxWidth: 560)
+                    .paperMargins()
+                    .padding(.bottom, PaperSpace.section)
             }
         }
         .onAppear {
@@ -428,6 +354,22 @@ struct ManualBoxScannerView: View {
     }
 }
 
+private struct ManualTorchButton: View {
+    @ObservedObject var camera: CameraService
+
+    var body: some View {
+        Button {
+            camera.toggleTorch()
+        } label: {
+            PaperIcon(.torch, size: 22, color: camera.isTorchOn ? PaperColor.onAccent : PaperColor.onInverse)
+                .frame(width: 44, height: 44)
+                .background(camera.isTorchOn ? PaperColor.accent : .clear, in: Circle())
+        }
+        .buttonStyle(.paperIcon)
+        .accessibilityLabel(camera.isTorchOn ? "Torch, on" : "Torch, off")
+    }
+}
+
 // MARK: - Add Manual Item Sheet
 
 struct AddManualItemSheet: View {
@@ -438,31 +380,44 @@ struct AddManualItemSheet: View {
     @State private var quantity = 1
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("Item") {
-                    TextField("Item name (e.g. Hinge pack)", text: $itemName)
-                        .textInputAutocapitalization(.words)
-                    Stepper("Quantity: \(quantity)", value: $quantity, in: 1...9999)
-                }
-            }
-            .navigationTitle("Add Manual Item")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
-                        onAdd(itemName, quantity)
-                        dismiss()
+        SheetScreen("Add an item") {
+            VStack(alignment: .leading, spacing: PaperSpace.xxl) {
+                PaperUnderlineField("Item", text: $itemName, placeholder: "For example, hinge pack")
+                    .textInputAutocapitalization(.words)
+                    .padding(.top, PaperSpace.l)
+
+                VStack(alignment: .leading, spacing: PaperSpace.s) {
+                    PaperLabel("Quantity")
+                    HStack(spacing: PaperSpace.l) {
+                        stepButton(.minus, label: "One fewer") { quantity = max(1, quantity - 1) }
+                        Text("\(quantity)").paperType(.figure, numeric: true).foregroundStyle(PaperColor.ink)
+                            .frame(minWidth: 48)
+                            .contentTransition(.numericText())
+                        stepButton(.plus, label: "One more") { quantity = min(9999, quantity + 1) }
                     }
-                    .fontWeight(.semibold)
-                    .disabled(itemName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
+
+                Button("Add to box") {
+                    onAdd(itemName, quantity)
+                    dismiss()
+                }
+                .buttonStyle(.paperPill(.accent, .large, fullWidth: true))
+                .disabled(itemName.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
-        .presentationDetents([.medium])
+    }
+
+    private func stepButton(_ glyph: PaperGlyph, label: String, action: @escaping () -> Void) -> some View {
+        Button {
+            withAnimation(.snappy) { action() }
+        } label: {
+            PaperIcon(glyph, size: 18, lineWidth: 2)
+                .frame(width: 44, height: 44)
+                .overlay(Circle().strokeBorder(PaperColor.border, lineWidth: 1))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }
 
@@ -490,67 +445,29 @@ struct DimensionsSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("Dimensions (mm)") {
-                    HStack {
-                        Text("Length")
-                        Spacer()
-                        TextField("mm", text: $lengthStr)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 100)
-                    }
-                    HStack {
-                        Text("Width")
-                        Spacer()
-                        TextField("mm", text: $widthStr)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 100)
-                    }
-                    HStack {
-                        Text("Height")
-                        Spacer()
-                        TextField("mm", text: $heightStr)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 100)
-                    }
+        SheetScreen("Size and weight") {
+            VStack(alignment: .leading, spacing: PaperSpace.xxl) {
+                HStack(spacing: PaperSpace.l) {
+                    PaperUnderlineField("Length", text: $lengthStr, placeholder: "–", unit: "mm", keyboard: .numberPad)
+                    PaperUnderlineField("Width", text: $widthStr, placeholder: "–", unit: "mm", keyboard: .numberPad)
+                    PaperUnderlineField("Height", text: $heightStr, placeholder: "–", unit: "mm", keyboard: .numberPad)
                 }
+                .padding(.top, PaperSpace.l)
 
-                Section("Weight") {
-                    HStack {
-                        Text("Weight (kg)")
-                        Spacer()
-                        TextField("kg", text: $weightStr)
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 100)
-                    }
+                PaperUnderlineField("Weight", text: $weightStr, placeholder: "–", unit: "kg", keyboard: .decimalPad)
+
+                Button("Save") {
+                    guard let l = Int(lengthStr),
+                          let w = Int(widthStr),
+                          let h = Int(heightStr),
+                          let wt = Double(weightStr) else { return }
+                    onSave(l, w, h, wt)
+                    dismiss()
                 }
-            }
-            .navigationTitle("Dimensions & Weight")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        guard let l = Int(lengthStr),
-                              let w = Int(widthStr),
-                              let h = Int(heightStr),
-                              let wt = Double(weightStr) else { return }
-                        onSave(l, w, h, wt)
-                        dismiss()
-                    }
-                    .fontWeight(.semibold)
-                    .disabled(!isValid)
-                }
+                .buttonStyle(.paperPill(.accent, .large, fullWidth: true))
+                .disabled(!isValid)
             }
         }
-        .presentationDetents([.medium])
         .onAppear {
             if let l = initialLength { lengthStr = "\(l)" }
             if let w = initialWidth { widthStr = "\(w)" }

@@ -1,3 +1,4 @@
+import CabinetDesign
 import SwiftUI
 
 /// Shows conflicts that the operator must resolve — typically panels that
@@ -10,55 +11,64 @@ struct ScanConflictsView: View {
     private let cache = ScanCacheService.shared
 
     var body: some View {
-        List {
-            if conflicts.isEmpty {
-                ContentUnavailableView(
-                    "No conflicts",
-                    systemImage: "checkmark.shield",
-                    description: Text("All scans for this box are accepted by the server.")
-                )
-            } else {
-                Section {
-                    ForEach(conflicts, id: \.localId) { row(for: $0) }
-                } header: {
-                    Text("Needs your attention")
-                } footer: {
-                    Text("These panels were either packed in a different box, removed from the manifest, or scanned into the wrong consignment. Mark each as resolved once you've checked it.")
+        PushedScreen(back: "Box", onRefresh: { await reload() }) {
+            VStack(alignment: .leading, spacing: 0) {
+                ScreenTitle("Scans to check")
+
+                if conflicts.isEmpty {
+                    PaperEmptyState("Nothing to check", message: "Every scan for this box was accepted by the server.")
+                        .padding(.top, PaperSpace.l)
+                } else {
+                    Text("These panels were packed in a different box, removed from the manifest, or scanned into the wrong consignment. Mark each one resolved once you've checked it.")
+                        .paperType(.subhead)
+                        .foregroundStyle(PaperColor.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, PaperSpace.s)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        PaperSectionHeader("Needs your attention") {
+                            Text("\(conflicts.count)").paperType(.footnote, numeric: true).foregroundStyle(PaperColor.tertiary)
+                        }
+                        ForEach(conflicts, id: \.localId) { row(for: $0) }
+                    }
+                    .section(top: PaperSpace.xxl)
                 }
             }
+            .screen()
         }
-        .navigationTitle("Scan conflicts")
         .task { await reload() }
-        .refreshable { await reload() }
     }
 
     private func row(for s: PendingScan) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("\(s.cabinetName) — Part \(s.partNumber)")
-                .font(.body.weight(.semibold))
-            Text(s.projectName).font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: PaperSpace.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
+                Circle().fill(Tone.held.color).frame(width: 7, height: 7)
+                Code(s.cabinetName, color: PaperColor.ink, size: 14)
+                Text("Part \(s.partNumber)").paperType(.body).foregroundStyle(PaperColor.ink)
+            }
+            Text(s.projectName).paperType(.footnote).foregroundStyle(PaperColor.secondary)
             if let msg = s.errorMessage {
-                Text(msg).font(.caption).foregroundStyle(.red)
+                Text(msg).paperType(.footnote).foregroundStyle(Tone.held.textColor)
             }
             if let otherBox = s.alreadyPackedInBoxId {
                 Text("Already packed in box \(otherBox.prefix(8))…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .paperType(.footnote)
+                    .foregroundStyle(PaperColor.secondary)
             }
-            HStack {
-                Button("Mark resolved") {
-                    Task {
-                        if let uuid = UUID(uuidString: s.localId) {
-                            await cache.resolveConflict(localId: uuid)
-                        }
-                        await reload()
+            Button("Mark resolved") {
+                Task {
+                    if let uuid = UUID(uuidString: s.localId) {
+                        await cache.resolveConflict(localId: uuid)
                     }
+                    await reload()
                 }
-                .buttonStyle(.borderless)
-                .foregroundStyle(.blue)
             }
+            .buttonStyle(.paperPill(.outline, .compact))
+            .padding(.top, PaperSpace.xs)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, PaperSpace.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) { PaperHairline(color: PaperColor.hairlineSoft) }
     }
 
     private func reload() async {

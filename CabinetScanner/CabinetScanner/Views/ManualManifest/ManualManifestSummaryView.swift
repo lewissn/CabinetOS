@@ -1,74 +1,71 @@
+import CabinetDesign
 import SwiftUI
 
+/// A finished courier manifest, box by box, ready to copy or share.
 struct ManualManifestSummaryView: View {
     let manifest: ManualManifest
     let boxes: [ManualManifestBox]
 
-    @Environment(\.dismiss) private var dismiss
     @State private var boxItems: [String: [ManualManifestItem]] = [:]
     @State private var isLoading = true
-    @State private var showCopied = false
+    @State private var copiedMessage: String?
     @State private var expandedBoxes: Set<String> = []
 
     private let service = ManualManifestService()
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if isLoading {
-                    ProgressView("Loading summary...")
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-                            headerCard
-                            ForEach(sortedBoxes) { box in
-                                boxCard(box)
-                            }
-                        }
-                        .padding()
-                    }
+        SheetScreen("Summary") {
+            Menu {
+                Button {
+                    copyToClipboard()
+                } label: {
+                    Label("Copy summary", systemImage: "doc.on.doc")
                 }
+                Button {
+                    shareSummary()
+                } label: {
+                    Label("Share summary", systemImage: "square.and.arrow.up")
+                }
+            } label: {
+                Text("Share")
+                    .font(.brand(15, .semibold, relativeTo: .callout))
+                    .foregroundStyle(PaperColor.ink)
+                    .frame(minHeight: PaperSpace.tap)
             }
-            .navigationTitle("Summary")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Done") { dismiss() }
+            .disabled(isLoading)
+        } content: {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: PaperSpace.s) {
+                    if let courier = manifest.courier, !courier.isEmpty {
+                        Text(courier).paperType(.footnote).foregroundStyle(PaperColor.secondary)
+                    }
+                    Text(manifest.manifestName)
+                        .paperType(.title)
+                        .foregroundStyle(PaperColor.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    PaperFigure(PaperFormat.int(boxes.count), unit: boxes.count == 1 ? "box" : "boxes", style: .heroS)
+                        .padding(.top, PaperSpace.s)
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button {
-                            copyToClipboard()
-                        } label: {
-                            Label("Copy Summary", systemImage: "doc.on.doc")
-                        }
+                .padding(.top, PaperSpace.l)
 
-                        Button {
-                            shareSummary()
-                        } label: {
-                            Label("Share Summary", systemImage: "square.and.arrow.up")
+                if isLoading {
+                    LoadingLine("Loading the boxes").section(top: PaperSpace.xxl)
+                } else {
+                    VStack(alignment: .leading, spacing: 0) {
+                        PaperSectionHeader("Boxes")
+                        ForEach(sortedBoxes) { box in
+                            boxRow(box)
                         }
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
                     }
+                    .section()
                 }
             }
-            .overlay(alignment: .bottom) {
-                if showCopied {
-                    Text("Copied to clipboard")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .background(.black.opacity(0.8))
-                        .clipShape(Capsule())
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .padding(.bottom, 16)
-                }
-            }
-            .task {
-                await loadAllItems()
-            }
+        }
+        .overlay(alignment: .bottom) {
+            ToastView(message: $copiedMessage)
+        }
+        .task {
+            await loadAllItems()
         }
     }
 
@@ -76,101 +73,57 @@ struct ManualManifestSummaryView: View {
         boxes.sorted { $0.boxNumber < $1.boxNumber }
     }
 
-    // MARK: - Header
+    // MARK: - Box row
 
-    private var headerCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(manifest.manifestName)
-                .font(.title2.weight(.bold))
+    private func boxRow(_ box: ManualManifestBox) -> some View {
+        let items = boxItems[box.id] ?? []
+        let isExpanded = expandedBoxes.contains(box.id)
+        let detail = [box.dimensionsDisplay, box.weightDisplay].compactMap { $0 }.joined(separator: " · ")
 
-            if let courier = manifest.courier, !courier.isEmpty {
-                HStack(spacing: 6) {
-                    Image(systemName: "truck.box")
-                        .foregroundStyle(.blue)
-                    Text(courier)
-                        .font(.subheadline.weight(.semibold))
+        return VStack(alignment: .leading, spacing: PaperSpace.s) {
+            HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Box \(box.boxNumber)").paperType(.body).foregroundStyle(PaperColor.ink)
+                    Text(detail.isEmpty ? "No size or weight" : detail)
+                        .paperType(.footnote, numeric: true)
+                        .foregroundStyle(PaperColor.secondary)
                 }
+                Spacer(minLength: PaperSpace.m)
+                StatusText(box.isClosed ? "Closed" : "Open", tone: box.isClosed ? .done : .progress)
             }
 
-            Text("Boxes: \(boxes.count)")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-    }
-
-    // MARK: - Box Card
-
-    private func boxCard(_ box: ManualManifestBox) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Box \(box.boxNumber)")
-                    .font(.headline)
-                Spacer()
-                if box.isClosed {
-                    Image(systemName: "lock.fill")
-                        .foregroundStyle(.green)
-                        .font(.caption)
-                }
-            }
-
-            HStack(spacing: 16) {
-                if let dims = box.dimensionsDisplay {
-                    Label(dims, systemImage: "ruler")
-                        .font(.subheadline)
-                }
-                if let weight = box.weightDisplay {
-                    Label(weight, systemImage: "scalemass")
-                        .font(.subheadline)
-                }
-            }
-            .foregroundStyle(.secondary)
-
-            let items = boxItems[box.id] ?? []
             if !items.isEmpty {
-                let isExpanded = expandedBoxes.contains(box.id)
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        if isExpanded {
-                            expandedBoxes.remove(box.id)
-                        } else {
-                            expandedBoxes.insert(box.id)
-                        }
+                    withAnimation(PaperMotion.fade) {
+                        if isExpanded { expandedBoxes.remove(box.id) } else { expandedBoxes.insert(box.id) }
                     }
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .font(.caption2)
-                        Text("\(items.count) items")
-                            .font(.caption)
+                    HStack(spacing: PaperSpace.xs) {
+                        PaperIcon(isExpanded ? .chevronDown : .chevronRight, size: 12, color: PaperColor.secondary)
+                        Text(Format.count(items.count, "item")).paperType(.footnote, numeric: true)
                     }
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(PaperColor.secondary)
                 }
+                .buttonStyle(.plain)
+                .frame(minHeight: PaperSpace.tap)
 
                 if isExpanded {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: PaperSpace.xs) {
                         ForEach(items) { item in
-                            HStack {
-                                if item.isManual {
-                                    Text("\(item.manualItemName ?? "?") (x\(item.qty))")
-                                        .font(.caption)
-                                } else {
-                                    Text("\(item.projectName ?? "?") / \(item.cabinetName ?? "?") / Part \(item.partNumber ?? "?") (x\(item.qty))")
-                                        .font(.caption)
-                                }
-                            }
-                            .foregroundStyle(.secondary)
+                            Text(item.isManual
+                                 ? "\(item.manualItemName ?? "–") × \(item.qty)"
+                                 : "\(item.projectName ?? "–") / \(item.cabinetName ?? "–") / part \(item.partNumber ?? "–") × \(item.qty)")
+                                .paperType(.footnote, numeric: true)
+                                .foregroundStyle(PaperColor.body)
                         }
                     }
-                    .padding(.leading, 8)
+                    .padding(.leading, PaperSpace.l)
                 }
             }
         }
+        .padding(.vertical, PaperSpace.m)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(alignment: .bottom) { PaperHairline(color: PaperColor.hairlineSoft) }
     }
 
     // MARK: - Data loading
@@ -220,10 +173,7 @@ struct ManualManifestSummaryView: View {
     private func copyToClipboard() {
         UIPasteboard.general.string = buildSummaryText()
         HapticService.success()
-        withAnimation(.easeInOut) { showCopied = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            withAnimation(.easeOut) { showCopied = false }
-        }
+        copiedMessage = "Copied to the clipboard"
     }
 
     private func shareSummary() {
