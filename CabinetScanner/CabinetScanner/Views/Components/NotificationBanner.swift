@@ -1,3 +1,4 @@
+import CabinetDesign
 import SwiftUI
 
 // MARK: - Arriving notification banner
@@ -23,28 +24,28 @@ struct NotificationBanner: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: notification.systemImage)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
-                    .background(notification.accentColour, in: RoundedRectangle(cornerRadius: 9))
+            HStack(alignment: .center, spacing: PaperSpace.m) {
+                PaperIcon(.bell, size: 18, color: PaperColor.onInverse)
+                    .frame(width: 24)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(notification.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
+                        .paperType(.callout, numeric: true)
+                        .foregroundStyle(PaperColor.onInverse)
                         .multilineTextAlignment(.leading)
                         .lineLimit(2)
 
                     if let urgency = notification.urgencyNote {
-                        Text(urgency)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(notification.accentColour)
+                        HStack(spacing: 6) {
+                            Circle().fill(notification.tone.color).frame(width: 7, height: 7)
+                            Text(urgency)
+                                .paperType(.footnote, numeric: true)
+                                .foregroundStyle(PaperColor.onInverse)
+                        }
                     } else if let body = notification.body {
                         Text(body)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .paperType(.footnote, numeric: true)
+                            .foregroundStyle(PaperColor.onInverseMuted)
                             .multilineTextAlignment(.leading)
                             .lineLimit(2)
                     }
@@ -53,26 +54,22 @@ struct NotificationBanner: View {
                 Spacer(minLength: 0)
 
                 Button(action: onDismiss) {
-                    Image(systemName: "xmark")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
+                    PaperIcon(.close, size: 12, lineWidth: 2, color: PaperColor.onInverseMuted)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.paperIcon)
+                .accessibilityLabel("Dismiss")
             }
-            .padding(12)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .strokeBorder(notification.accentColour.opacity(0.35))
-            )
-            .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+            .padding(.leading, PaperSpace.l)
+            .padding(.trailing, PaperSpace.xs)
+            .padding(.vertical, PaperSpace.xs)
+            .frame(minHeight: 56)
+            .background(PaperColor.inverse, in: RoundedRectangle(cornerRadius: 16))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 16)
-        .transition(.move(edge: .top).combined(with: .opacity))
+        .frame(maxWidth: 560)
+        .paperMargins()
+        .transition(.opacity)
         // `.task(id:)` rather than a timer: structured concurrency cancels it
         // when the banner goes away, so nothing writes to state that has
         // already gone. ToastView carries the scar from getting this wrong.
@@ -97,7 +94,7 @@ struct NotificationBannerHost: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .overlay(alignment: .top) {
+            .overlay(alignment: .bottom) {
                 if let notification = service.toast {
                     NotificationBanner(
                         notification: notification,
@@ -107,10 +104,10 @@ struct NotificationBannerHost: ViewModifier {
                         },
                         onDismiss: { service.dismissToast() }
                     )
-                    .padding(.top, 4)
+                    .padding(.bottom, PaperSpace.l)
                 }
             }
-            .animation(.spring(duration: 0.35), value: service.toast?.id)
+            .animation(PaperMotion.fade, value: service.toast?.id)
     }
 }
 

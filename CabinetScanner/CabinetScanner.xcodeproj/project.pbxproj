@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		A1000000000000000000002D /* JobConsignmentSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000002D /* JobConsignmentSection.swift */; };
 		1D6DA56B2F4F5DDE00DEE6A8 /* StockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D6DA5692F4F5DDE00DEE6A8 /* StockView.swift */; };
+		F20000000000000000000003 /* CabinetDesign in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000002 /* CabinetDesign */; };
 		A10000000000000000000001 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* AppState.swift */; };
 		A10000000000000000000002 /* CabinetScannerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* CabinetScannerApp.swift */; };
 		A10000000000000000000003 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* RootView.swift */; };
@@ -96,6 +97,8 @@
 		A10000000000000000000067 /* ProductionBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000067 /* ProductionBoardView.swift */; };
 		A10000000000000000000068 /* JobsHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000068 /* JobsHubView.swift */; };
 		A10000000000000000000069 /* ProofViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000069 /* ProofViewerView.swift */; };
+		D38EF451334A1BFE8286EE6C /* DesignShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3ABB6FDA8953570BA322B06 /* DesignShared.swift */; };
+		D3FC5946D7EF4B3C0D0ABCA7 /* ModelPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E579059DAC4EABC4A56A9A /* ModelPresentation.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -189,6 +192,8 @@
 		B10000000000000000000068 /* JobsHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobsHubView.swift; sourceTree = "<group>"; };
 		B10000000000000000000069 /* ProofViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProofViewerView.swift; sourceTree = "<group>"; };
 		C10000000000000000000001 /* CabinetScanner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CabinetScanner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D3ABB6FDA8953570BA322B06 /* DesignShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignShared.swift; sourceTree = "<group>"; };
+		D3E579059DAC4EABC4A56A9A /* ModelPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPresentation.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -196,6 +201,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F20000000000000000000003 /* CabinetDesign in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -227,6 +233,7 @@
 				E10000000000000000000006 /* Services */,
 				E10000000000000000000007 /* ViewModels */,
 				E10000000000000000000008 /* Views */,
+				D3B9389C6A4FD0EEA8EF8A25 /* Design */,
 			);
 			path = CabinetScanner;
 			sourceTree = "<group>";
@@ -458,6 +465,15 @@
 			path = Notifications;
 			sourceTree = "<group>";
 		};
+		D3B9389C6A4FD0EEA8EF8A25 /* Design */ = {
+			isa = PBXGroup;
+			children = (
+				D3ABB6FDA8953570BA322B06 /* DesignShared.swift */,
+				D3E579059DAC4EABC4A56A9A /* ModelPresentation.swift */,
+			);
+			path = Design;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -474,6 +490,9 @@
 			dependencies = (
 			);
 			name = CabinetScanner;
+			packageProductDependencies = (
+				F20000000000000000000002 /* CabinetDesign */,
+			);
 			productName = CabinetScanner;
 			productReference = C10000000000000000000001 /* CabinetScanner.app */;
 			productType = "com.apple.product-type.application";
@@ -502,6 +521,9 @@
 				Base,
 			);
 			mainGroup = E10000000000000000000001;
+			packageReferences = (
+				F20000000000000000000001 /* XCLocalSwiftPackageReference "Packages/CabinetDesign" */,
+			);
 			productRefGroup = E10000000000000000000003 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -527,6 +549,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D3FC5946D7EF4B3C0D0ABCA7 /* ModelPresentation.swift in Sources */,
+				D38EF451334A1BFE8286EE6C /* DesignShared.swift in Sources */,
 				A1000000000000000000002D /* JobConsignmentSection.swift in Sources */,
 				A1000000000000000000002C /* DeepLink.swift in Sources */,
 				A1000000000000000000002A /* DespatchNoticeBoard.swift in Sources */,
@@ -759,7 +783,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2;
+				MARKETING_VERSION = 3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cabinetOS.CabinetScanner;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -787,7 +811,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2;
+				MARKETING_VERSION = 3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cabinetOS.CabinetScanner;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -818,6 +842,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		F20000000000000000000001 /* XCLocalSwiftPackageReference "Packages/CabinetDesign" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/CabinetDesign;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F20000000000000000000002 /* CabinetDesign */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CabinetDesign;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = F10000000000000000000005 /* Project object */;
 }

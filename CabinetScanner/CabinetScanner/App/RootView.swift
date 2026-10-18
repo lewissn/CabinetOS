@@ -1,3 +1,4 @@
+import CabinetDesign
 import SwiftUI
 
 struct RootView: View {
@@ -10,15 +11,39 @@ struct RootView: View {
 
 // MARK: - Tab enumeration
 
-enum AppTab: Int {
+enum AppTab: Int, CaseIterable {
     case dashboard
     case jobs
     case packaging
     case stock
     case settings
+
+    var title: String {
+        switch self {
+        case .dashboard: "Today"
+        case .jobs: "Jobs"
+        case .packaging: "Packing"
+        case .stock: "Stock"
+        case .settings: "Settings"
+        }
+    }
+
+    var glyph: PaperGlyph {
+        switch self {
+        case .dashboard: .today
+        case .jobs: .job
+        case .packaging: .box
+        case .stock: .stock
+        case .settings: .settings
+        }
+    }
 }
 
 // MARK: - Tab bar
+//
+// PaperTabBar over a ZStack of the five tabs. Each tab is kept alive (hidden
+// by opacity, not torn down) so its navigation stack, scroll position and
+// loaded data survive switching away, as they did under TabView.
 
 struct MainTabView: View {
     @EnvironmentObject var appState: AppState
@@ -29,46 +54,56 @@ struct MainTabView: View {
     }
 
     var body: some View {
-        TabView(selection: selectedTab) {
-            DashboardView(switchToPackaging: { router.selectedTab = .packaging })
-                .tabItem {
-                    Label("Dashboard", systemImage: "square.grid.2x2")
+        VStack(spacing: 0) {
+            ZStack {
+                tabContent(.dashboard) {
+                    DashboardView(switchToPackaging: { router.selectedTab = .packaging })
                 }
-                .tag(AppTab.dashboard)
-
-            JobsHubView()
-                .tabItem {
-                    Label("Jobs", systemImage: "magnifyingglass")
-                }
-                .tag(AppTab.jobs)
-
-            packagingTab
-                .tabItem {
-                    Label("Packaging", systemImage: "shippingbox")
-                }
-                .tag(AppTab.packaging)
-
-            StockView()
-                .tabItem {
-                    Label("Stock", systemImage: "archivebox")
-                }
-                .tag(AppTab.stock)
-
-            SettingsPlaceholderView()
-                .tabItem {
-                    Label("Settings", systemImage: "gearshape")
-                }
-                .tag(AppTab.settings)
-        }
-        // An arriving despatch change, over whatever is on screen. Tapping it
-        // goes to the job, which is the only useful thing to do about one.
-        .notificationBanner { notification in
-            if let jobId = notification.jobId {
-                router.openJob(jobId)
-            } else {
-                router.selectedTab = .dashboard
+                tabContent(.jobs) { JobsHubView() }
+                tabContent(.packaging) { packagingTab }
+                tabContent(.stock) { StockView() }
+                tabContent(.settings) { SettingsPlaceholderView() }
             }
+            // An arriving despatch change, over whatever is on screen. Tapping it
+            // goes to the job, which is the only useful thing to do about one.
+            .notificationBanner { notification in
+                if let jobId = notification.jobId {
+                    router.openJob(jobId)
+                } else {
+                    router.selectedTab = .dashboard
+                }
+            }
+
+            PaperTabBar(AppTab.allCases.map { .init($0, title: $0.title, glyph: $0.glyph) }, selection: selectedTab)
+                .overlay(alignment: .top) { currentMark }
         }
+        .paperBackground()
+        .paperStatusBarBackdrop()
+    }
+
+    /// The current tab gets the accent as a short bar: amber marks the current
+    /// place, never text.
+    private var currentMark: some View {
+        let tabs = AppTab.allCases
+        let i = CGFloat(tabs.firstIndex(of: router.selectedTab) ?? 0)
+        return GeometryReader { geo in
+            let w = geo.size.width / CGFloat(tabs.count)
+            Capsule().fill(PaperColor.accent)
+                .frame(width: 28, height: 3)
+                .position(x: w * i + w / 2, y: 1.5)
+                .animation(PaperMotion.spring, value: router.selectedTab)
+        }
+        .frame(height: 3)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func tabContent<V: View>(_ tab: AppTab, @ViewBuilder _ view: () -> V) -> some View {
+        let current = router.selectedTab == tab
+        return view()
+            .opacity(current ? 1 : 0)
+            .allowsHitTesting(current)
+            .accessibilityHidden(!current)
     }
 
     @ViewBuilder

@@ -1,3 +1,4 @@
+import CabinetDesign
 import SwiftUI
 
 /// Auto-dismissing toast bound to an external `String?` state.
@@ -17,22 +18,34 @@ import SwiftUI
 struct ToastView: View {
     @Binding var message: String?
     var autoDismissAfter: Duration = .seconds(2)
+    /// The check suits a confirmation; pass nil for a toast that reports
+    /// something that didn't happen ("Nothing was added").
+    var glyph: PaperGlyph? = .check
 
     var body: some View {
         Group {
             if let text = message {
-                Text(text)
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                    .background(.black.opacity(0.8))
-                    .clipShape(Capsule())
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .padding(.bottom, 16)
+                HStack(spacing: PaperSpace.s) {
+                    if let glyph {
+                        PaperIcon(glyph, size: 16, lineWidth: 2.2, color: PaperColor.onInverse)
+                    }
+                    Text(text)
+                        .paperType(.callout, numeric: true)
+                        .foregroundStyle(PaperColor.onInverse)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                }
+                .padding(.horizontal, PaperSpace.xl)
+                .padding(.vertical, PaperSpace.s)
+                .frame(minHeight: 48)
+                .background(PaperColor.inverse, in: Capsule())
+                .paperMargins()
+                .transition(.opacity)
+                .padding(.bottom, PaperSpace.l)
+                .accessibilityAddTraits(.updatesFrequently)
             }
         }
-        .animation(.easeOut(duration: 0.25), value: message)
+        .animation(PaperMotion.fade, value: message)
         .task(id: message) {
             guard message != nil else { return }
             do {
