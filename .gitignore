@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Xcode — per-user state, not project configuration
+**/xcuserdata/
+**/*.xcworkspace/xcuserdata/
+*.xcuserdatad
+DerivedData/
+build/
+
+# cabinet-lab2 is its own repository (github.com/lewissn/cabinet-lab2) and is
+# checked out here for convenience. Ignored so it is never committed into this
+# one as a directory of files or as an accidental submodule.
+/cabinet-lab2/

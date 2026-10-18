@@ -20,7 +20,11 @@ final class MockAPIService: APIServiceProtocol {
             status: .open,
             itemCount: 0,
             createdAt: Date(),
-            closedAt: nil
+            closedAt: nil,
+            wrappedAt: nil,
+            wrappedBy: nil,
+            wrappedByDevice: nil,
+            wrapReworkCount: 0
         )
         boxes[consId] = [box]
         boxItems["box-001"] = []
@@ -61,7 +65,11 @@ final class MockAPIService: APIServiceProtocol {
             status: .open,
             itemCount: 0,
             createdAt: Date(),
-            closedAt: nil
+            closedAt: nil,
+            wrappedAt: nil,
+            wrappedBy: nil,
+            wrappedByDevice: nil,
+            wrapReworkCount: 0
         )
         boxes[consignmentId, default: []].append(box)
         boxItems[box.id] = []
@@ -89,7 +97,7 @@ final class MockAPIService: APIServiceProtocol {
         }
     }
 
-    func closeBox(boxId: String) async throws -> Box {
+    func closeBox(boxId: String, wrappedBy: String?, wrappedByDevice: String?) async throws -> Box {
         try await simulateDelay()
         guard let box = findBox(boxId) else {
             throw APIError.httpError(statusCode: 404, serverMessage: nil)
@@ -102,17 +110,23 @@ final class MockAPIService: APIServiceProtocol {
             status: .closed,
             itemCount: boxItems[boxId]?.count ?? 0,
             createdAt: box.createdAt,
-            closedAt: Date()
+            closedAt: Date(),
+            wrappedAt: Date(),
+            wrappedBy: wrappedBy?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? wrappedBy : nil,
+            wrappedByDevice: wrappedByDevice,
+            wrapReworkCount: box.wrapReworkCount
         )
         replaceBox(closed)
         return closed
     }
 
-    func reopenBox(boxId: String, consignmentId: String) async throws {
+    func reopenBox(boxId: String, consignmentId: String, reopenedByDevice: String?) async throws {
         try await simulateDelay()
         guard let box = findBox(boxId) else {
             throw APIError.httpError(statusCode: 404, serverMessage: nil)
         }
+        let isSelfCorrection = reopenedByDevice != nil && reopenedByDevice == box.wrappedByDevice
+        let countsAsRework = box.wrappedAt != nil && !isSelfCorrection
         let reopened = Box(
             id: box.id,
             consignmentId: box.consignmentId,
@@ -121,7 +135,11 @@ final class MockAPIService: APIServiceProtocol {
             status: .open,
             itemCount: boxItems[boxId]?.count ?? 0,
             createdAt: box.createdAt,
-            closedAt: nil
+            closedAt: nil,
+            wrappedAt: nil,
+            wrappedBy: nil,
+            wrappedByDevice: nil,
+            wrapReworkCount: box.wrapReworkCount + (countsAsRework ? 1 : 0)
         )
         replaceBox(reopened)
     }
@@ -187,7 +205,11 @@ final class MockAPIService: APIServiceProtocol {
                 status: box.status,
                 itemCount: boxItems[boxId]?.count ?? 0,
                 createdAt: box.createdAt,
-                closedAt: box.closedAt
+                closedAt: box.closedAt,
+                wrappedAt: box.wrappedAt,
+                wrappedBy: box.wrappedBy,
+                wrappedByDevice: box.wrappedByDevice,
+                wrapReworkCount: box.wrapReworkCount
             )
             replaceBox(updated)
         }
@@ -243,6 +265,80 @@ final class MockAPIService: APIServiceProtocol {
         } else {
             return FinishConsignmentResponse(ok: false, missingItems: missing, message: "Missing items found")
         }
+    }
+
+    // MARK: - Offline-capable scanning support (mock stubs)
+
+    func fetchPanelRegistry(manifestId: String, projectName: String, etag: String?) async throws -> PanelRegistryResponse {
+        try await simulateDelay()
+        let entries = MockData.registryItems(for: "cons-001").map { item in
+            PanelRegistryEntry(
+                panelUid: "\(item.projectName)|\(item.cabinetName)|\(item.partNumber)",
+                cabinetName: item.cabinetName,
+                partNumber: item.partNumber,
+                lengthMm: 600, widthMm: 400, thicknessMm: 18, material: "MDF"
+            )
+        }
+        return PanelRegistryResponse(
+            ok: true,
+            etag: DateFormatters.iso8601.string(from: Date(timeIntervalSince1970: 0)),
+            notModified: nil,
+            panels: entries
+        )
+    }
+
+    func fetchPackedPanels(consignmentId: String) async throws -> PackedPanelsResponse {
+        try await simulateDelay()
+        let entries = (boxes[consignmentId] ?? []).flatMap { box -> [PackedPanelEntry] in
+            (boxItems[box.id] ?? []).map {
+                PackedPanelEntry(
+                    panelUid: tripletKey($0.projectName, $0.cabinetName, $0.partNumber),
+                    boxId: box.id,
+                    scannedAt: DateFormatters.iso8601.string(from: $0.scannedAt)
+                )
+            }
+        }
+        return PackedPanelsResponse(
+            ok: true,
+            etag: DateFormatters.iso8601.string(from: Date()),
+            panels: entries
+        )
+    }
+
+    func submitScanBatch(boxId: String, request: ScanBatchRequest) async throws -> ScanBatchResponse {
+        try await simulateDelay()
+        var results: [ScanBatchItemResult] = []
+        for item in request.scans {
+            let scanReq = ScanRequest(
+                manifestId: request.manifestId,
+                consignmentId: request.consignmentId,
+                projectName: item.projectName,
+                cabinetName: item.cabinetName,
+                partNumber: item.partNumber,
+                deviceId: item.deviceId,
+                stationId: item.stationId,
+                operator_: item.operator_,
+                scannedAt: item.scannedAt
+            )
+            let r = try await scanItem(boxId: boxId, request: scanReq)
+            results.append(ScanBatchItemResult(
+                localId: item.localId,
+                ok: r.ok,
+                code: r.code ?? (r.ok ? "OK" : "UNKNOWN"),
+                boxItemId: r.added?.boxItemId,
+                alreadyPackedInBoxId: r.details?.alreadyPackedInBoxId
+            ))
+        }
+        let totalPacked = boxes[request.consignmentId]?
+            .reduce(0) { $0 + (boxItems[$1.id]?.count ?? 0) } ?? 0
+        return ScanBatchResponse(
+            ok: true,
+            code: nil,
+            reason: nil,
+            message: nil,
+            results: results,
+            boxProgress: ScanBatchResponse.BoxProgress(packedCount: totalPacked, expectedCount: 24)
+        )
     }
 
     // MARK: - Helpers

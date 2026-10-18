@@ -1,39 +1,55 @@
+import CabinetDesign
 import SwiftUI
 
+/// A consignment's boxes: what's in boxes so far, the boxes themselves,
+/// chips to add one by type, and Finish consignment as the floor button.
 struct BoxListView: View {
-    @ObservedObject var viewModel: BoxListViewModel
-    @State private var showAddMenu = false
+    @StateObject private var viewModel: BoxListViewModel
+    @EnvironmentObject var appState: AppState
+    @Environment(\.dismiss) private var dismiss
     @State private var boxToDelete: Box?
+    /// A box just started from the "next box" prompt, opened straight away.
+    @State private var startedBox: Box?
+    @State private var isStartingBox = false
+    @EnvironmentObject private var toaster: Toaster
+    @AppStorage("labels.printOnClose") private var printOnClose = true
+
+    init(consignment: Consignment, manifestId: String, manifestName: String) {
+        _viewModel = StateObject(wrappedValue: BoxListViewModel(
+            consignment: consignment,
+            manifestId: manifestId,
+            manifestName: manifestName
+        ))
+    }
+
+    private var consignment: Consignment { viewModel.consignment }
+
+    /// Panels in this consignment's boxes, from the boxes just fetched.
+    private var panelsInBoxes: Int {
+        viewModel.boxes.filter { $0.boxType == .panel }.reduce(0) { $0 + $1.itemCount }
+    }
 
     var body: some View {
-        Group {
-            if viewModel.isLoading && viewModel.boxes.isEmpty {
-                ProgressView("Loading boxes...")
-            } else {
-                List {
-                    Section {
-                        Button {
-                            Task { await viewModel.finishConsignment() }
-                        } label: {
-                            HStack {
-                                Image(systemName: "checkmark.circle.fill")
-                                Text("Finish Consignment")
-                            }
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(viewModel.isFinishing)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16))
-                        .listRowBackground(Color.clear)
+        PushedScreen(back: "Consignments", scrolls: false) {
+            List {
+                header.paperListRow()
+
+                if !viewModel.hasLoaded && viewModel.boxes.isEmpty {
+                    LoadingLine("Loading boxes").paperListRow(top: PaperSpace.xxl)
+                } else {
+                    summary.paperListRow(top: PaperSpace.xxl)
+
+                    if let error = viewModel.errorMessage {
+                        Notice(text: error, tone: .held).paperListRow(top: PaperSpace.xxl)
                     }
 
+                    nextStep.paperListRow(top: PaperSpace.xxl)
+
                     if !viewModel.openBoxes.isEmpty {
-                        Section("Open Boxes") {
-                            ForEach(viewModel.openBoxes) { box in
-                                NavigationLink(value: box) {
-                                    BoxRow(box: box)
-                                }
+                        PaperSectionHeader("Open boxes").paperListRow(top: PaperSpace.section)
+                        ForEach(viewModel.openBoxes) { box in
+                            ListLinkRow(value: box) { BoxRow(box: box) }
+                                .paperListRow()
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button(role: .destructive) {
                                         boxToDelete = box
@@ -41,88 +57,94 @@ struct BoxListView: View {
                                         Label("Delete", systemImage: "trash")
                                     }
                                 }
-                            }
                         }
                     }
 
                     if !viewModel.closedBoxes.isEmpty {
-                        Section("Closed Boxes") {
-                            ForEach(viewModel.closedBoxes) { box in
-                                NavigationLink(value: box) {
-                                    BoxRow(box: box)
-                                }
-                            }
+                        PaperSectionHeader("Closed boxes").paperListRow(top: PaperSpace.section)
+                        ForEach(viewModel.closedBoxes) { box in
+                            ListLinkRow(value: box) { BoxRow(box: box) }
+                                .paperListRow()
                         }
                     }
 
-                    if viewModel.boxes.isEmpty {
-                        ContentUnavailableView(
-                            "No Boxes",
-                            systemImage: "shippingbox",
-                            description: Text("Add a box to start packing")
-                        )
+                    if viewModel.boxes.isEmpty && !failedEmpty {
+                        PaperEmptyState("No boxes yet", message: "Add a box below to start packing this consignment.")
+                            .paperListRow(top: PaperSpace.l)
                     }
-                }
-                .refreshable {
-                    await viewModel.loadBoxes()
+
+                    addChips.paperListRow(top: PaperSpace.xl)
+
+                    if !viewModel.boxes.isEmpty {
+                        Button {
+                            printLabels(viewModel.boxes, numbered: true)
+                        } label: {
+                            Label { Text("Print all \(viewModel.boxes.count) labels") } icon: { PaperIcon(.printer, size: 18) }
+                        }
+                        .buttonStyle(.paperPill(.outline, .large, fullWidth: true))
+                        .paperListRow(top: PaperSpace.section)
+                    }
+
+                    Button {
+                        Task { await viewModel.finishConsignment() }
+                    } label: {
+                        if viewModel.isFinishing {
+                            ProgressView().tint(PaperColor.onAccent)
+                        } else {
+                            Text("Finish consignment")
+                        }
+                    }
+                    .buttonStyle(.paperPill(.accent, .floor, fullWidth: true))
+                    .disabled(viewModel.isFinishing)
+                    .paperListRow(top: PaperSpace.section, bottom: 120)
                 }
             }
+            .paperList()
+            .refreshable {
+                await viewModel.loadBoxes()
+            }
         }
-        .navigationTitle(viewModel.consignment.displayTitle)
-        .navigationDestination(for: Box.self) { box in
+        .navigationDestination(item: $startedBox) { box in
             BoxDetailView(
-                viewModel: BoxDetailViewModel(
-                    box: box,
-                    manifestId: viewModel.manifestId,
-                    consignmentId: viewModel.consignment.id,
-                    customerName: viewModel.consignment.customerName,
-                    manifestName: viewModel.manifestName
-                )
+                box: box,
+                manifestId: viewModel.manifestId,
+                consignmentId: viewModel.consignment.id,
+                customerName: viewModel.consignment.customerName,
+                manifestName: viewModel.manifestName
             )
         }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button {
-                        Task { await viewModel.createBox(type: .panel) }
-                    } label: {
-                        Label("Panel Box", systemImage: "shippingbox")
-                    }
-                    Button {
-                        Task { await viewModel.createBox(type: .fittingKit) }
-                    } label: {
-                        Label("Fitting Kit Box", systemImage: "wrench.and.screwdriver")
-                    }
-                    Button {
-                        Task { await viewModel.createBox(type: .drawerRunner) }
-                    } label: {
-                        Label("Drawer Runner Box", systemImage: "line.3.horizontal")
-                    }
-                } label: {
-                    Image(systemName: "plus")
-                }
-            }
-
+        .navigationDestination(for: Box.self) { box in
+            BoxDetailView(
+                box: box,
+                manifestId: viewModel.manifestId,
+                consignmentId: viewModel.consignment.id,
+                customerName: viewModel.consignment.customerName,
+                manifestName: viewModel.manifestName
+            )
         }
-        .alert("Delete Box?", isPresented: .init(
-            get: { boxToDelete != nil },
-            set: { if !$0 { boxToDelete = nil } }
-        )) {
-            Button("Cancel", role: .cancel) { boxToDelete = nil }
-            Button("Delete", role: .destructive) {
+        .alert(
+            boxToDelete.map { "Delete \($0.title.lowercased())?" } ?? "Delete box?",
+            isPresented: .init(
+                get: { boxToDelete != nil },
+                set: { if !$0 { boxToDelete = nil } }
+            )
+        ) {
+            Button("Keep box", role: .cancel) { boxToDelete = nil }
+            Button("Delete box", role: .destructive) {
                 if let box = boxToDelete {
                     Task { await viewModel.deleteBox(box) }
                 }
                 boxToDelete = nil
             }
         } message: {
-            Text("This will permanently delete the box and all its contents.")
+            Text("The box and everything scanned into it are deleted. This can't be undone.")
         }
         .sheet(isPresented: $viewModel.showFinishSheet) {
             MissingItemsSheet(
                 missingItems: viewModel.missingItems,
                 onDismiss: { viewModel.showFinishSheet = false }
             )
+            .paperSheet(detents: [.medium, .large])
         }
         .overlay(alignment: .bottom) {
             ToastView(message: $viewModel.toastMessage)
@@ -130,41 +152,173 @@ struct BoxListView: View {
         .task {
             await viewModel.loadBoxes()
         }
+        .onChange(of: viewModel.isComplete) { _, complete in
+            if complete {
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    dismiss()
+                }
+            }
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: PaperSpace.s) {
+            HStack(spacing: PaperSpace.s) {
+                if let ref = consignment.jobRef {
+                    Code(ref, color: PaperColor.ink, size: 14)
+                }
+                Text(viewModel.manifestName).paperType(.footnote).foregroundStyle(PaperColor.secondary).lineLimit(1)
+            }
+            Text(consignment.title)
+                .paperType(.largeTitle)
+                .foregroundStyle(PaperColor.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+        }
+    }
+
+    /// The boxes didn't load: show nothing as zero.
+    private var failedEmpty: Bool { viewModel.errorMessage != nil && viewModel.boxes.isEmpty }
+
+    private var summary: some View {
+        VStack(alignment: .leading, spacing: PaperSpace.l) {
+            let expected = consignment.expectedItemCount
+            Headline(
+                value: failedEmpty ? "–" : PaperFormat.int(panelsInBoxes),
+                unit: expected > 0 ? "of \(PaperFormat.int(expected)) panels in boxes" : "panels in boxes",
+                detail: failedEmpty ? nil : "\(Format.count(viewModel.boxes.count, "box", "boxes")) · \(viewModel.openBoxes.count) open"
+            )
+            if expected > 0 && !failedEmpty {
+                PaperBar(Double(panelsInBoxes) / Double(expected),
+                         color: panelsInBoxes >= expected ? PaperColor.success : PaperColor.accent, height: 4)
+            }
+        }
+    }
+
+    /// What to do next, once every box is closed: start the next panel box
+    /// while panels are still to pack, or finish when they're all in.
+    @ViewBuilder
+    private var nextStep: some View {
+        let expected = consignment.expectedItemCount
+        if consignment.status != .complete, !failedEmpty, viewModel.openBoxes.isEmpty, !viewModel.boxes.isEmpty, expected > 0 {
+            if panelsInBoxes >= expected {
+                Notice(text: "Every panel is in a closed box.", tone: .done, glyph: .check,
+                       action: viewModel.isFinishing ? nil : "Finish") {
+                    Task { await viewModel.finishConsignment() }
+                }
+            } else {
+                let next = (viewModel.boxes.map(\.boxNumber).max() ?? 0) + 1
+                Notice(text: "\(Format.count(expected - panelsInBoxes, "panel")) still to pack.", tone: .progress, glyph: .box,
+                       action: isStartingBox ? nil : "Start box \(next)") {
+                    startNextPanelBox()
+                }
+            }
+        }
+    }
+
+    private func startNextPanelBox() {
+        guard !isStartingBox else { return }
+        isStartingBox = true
+        Task {
+            let before = Set(viewModel.boxes.map(\.id))
+            await viewModel.createBox(type: .panel, wrappedBy: appState.operatorName, deviceId: appState.deviceId)
+            isStartingBox = false
+            startedBox = viewModel.boxes.first { !before.contains($0.id) }
+        }
+    }
+
+    private var addChips: some View {
+        VStack(alignment: .leading, spacing: PaperSpace.xs) {
+            PaperLabel("Add a box")
+            PaperFlowLayout(spacing: PaperSpace.s) {
+                ForEach(Box.BoxType.allCases, id: \.self) { type in
+                    Button("+ \(type.chipLabel)") {
+                        Task {
+                            let before = Set(viewModel.boxes.map(\.id))
+                            await viewModel.createBox(type: type, wrappedBy: appState.operatorName, deviceId: appState.deviceId)
+                            // These close as they're added, so their label is
+                            // due now, like a panel box's at Close box.
+                            if type.isAutoClose, printOnClose,
+                               let added = viewModel.boxes.first(where: { !before.contains($0.id) }) {
+                                printLabels([added], numbered: false)
+                            }
+                        }
+                    }
+                    .buttonStyle(.paperChip())
+                    .accessibilityLabel("Add a \(type.label.lowercased())")
+                }
+            }
+            Text("Fitting kit, runner and rail boxes close as they're added.")
+                .paperType(.caption).foregroundStyle(PaperColor.tertiary)
+        }
+    }
+}
+
+// MARK: - Labels
+
+extension BoxListView {
+    /// "BJS" from "BJS 24 Oct", the way the box screen reads it.
+    private var courier: String {
+        let name = viewModel.manifestName
+        guard let firstDigit = name.firstIndex(where: \.isNumber) else { return name }
+        return String(name[..<firstDigit]).trimmingCharacters(in: .whitespaces)
+    }
+
+    private func label(for box: Box, of count: Int?) -> BoxLabel {
+        let contents: String
+        if let dims = box.boxType.fixedDimensions {
+            contents = "\(dims.displaySize) · \(dims.displayWeight)"
+        } else {
+            contents = Format.count(box.itemCount, "panel")
+        }
+        return BoxLabel(customer: consignment.title, reference: consignment.jobRef, boxKind: box.boxType.label,
+                        boxNumber: box.boxNumber, boxCount: count, contents: contents, courier: courier)
+    }
+
+    /// One page per box, straight to the label printer. "Box 2 of 5" only
+    /// when every box is printed together, because only then is 5 known.
+    private func printLabels(_ boxes: [Box], numbered: Bool) {
+        let sorted = boxes.sorted { $0.boxNumber < $1.boxNumber }
+        let pages = sorted.map { AnyView(label(for: $0, of: numbered ? viewModel.boxes.count : nil)) }
+        Task {
+            let outcome = await LabelPrinter.shared.print(pages, jobName: "\(consignment.title) labels")
+            if case .printed(let name) = outcome, pages.count > 1 {
+                toaster.show("\(pages.count) labels sent to \(name)")
+            } else if let message = outcome.message {
+                toaster.show(message)
+            }
+        }
     }
 }
 
 struct BoxRow: View {
     let box: Box
 
+    private var detail: String {
+        if let dims = box.boxType.fixedDimensions {
+            return "\(dims.displaySize) · \(dims.displayWeight)"
+        }
+        return Format.count(box.itemCount, "panel")
+    }
+
     var body: some View {
-        HStack {
-            Image(systemName: box.boxType.iconName)
-                .font(.title2)
-                .foregroundStyle(box.isClosed ? Color.secondary : Color.blue)
-                .frame(width: 36)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("\(box.boxType.displayName) #\(box.boxNumber)")
-                    .font(.headline)
-
-                if let dims = box.boxType.fixedDimensions {
-                    Text("\(dims.displaySize) · \(dims.displayWeight)")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("\(box.itemCount) items")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+        RowContainer {
+            HStack(alignment: .center, spacing: PaperSpace.m) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(box.title).paperType(.body).foregroundStyle(PaperColor.ink)
+                    Text(detail).paperType(.footnote, numeric: true).foregroundStyle(PaperColor.secondary).lineLimit(1)
                 }
-            }
-
-            Spacer()
-
-            if box.isClosed {
-                Image(systemName: "lock.fill")
-                    .foregroundStyle(.secondary)
+                Spacer(minLength: PaperSpace.m)
+                VStack(alignment: .trailing, spacing: 3) {
+                    StatusText(box.isClosed ? "Closed" : "Open", tone: box.isClosed ? .done : .progress)
+                    if box.isClosed, let by = box.wrappedBy, !by.isEmpty {
+                        Text("Wrapped by \(by)").paperType(.caption).foregroundStyle(PaperColor.tertiary).lineLimit(1)
+                    }
+                }
+                PaperIcon(.chevronRight, size: 14, color: PaperColor.faint)
             }
         }
-        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
     }
 }

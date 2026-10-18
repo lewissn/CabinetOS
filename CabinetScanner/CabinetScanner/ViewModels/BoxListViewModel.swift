@@ -4,12 +4,14 @@ import Foundation
 final class BoxListViewModel: ObservableObject {
     @Published var boxes: [Box] = []
     @Published var isLoading = false
+    @Published private(set) var hasLoaded = false
     @Published var errorMessage: String?
     @Published var toastMessage: String?
 
     @Published var showFinishSheet = false
     @Published var missingItems: [FinishConsignmentResponse.MissingItem] = []
     @Published var isFinishing = false
+    @Published var isComplete = false
 
     let consignment: Consignment
     let manifestId: String
@@ -35,16 +37,26 @@ final class BoxListViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+        hasLoaded = true
     }
 
-    func createBox(type: Box.BoxType) async {
+    func createBox(type: Box.BoxType, wrappedBy: String?, deviceId: String) async {
         do {
             var box = try await api.createBox(consignmentId: consignment.id, boxType: type)
+            // Non-panel boxes are packed and closed in one action, so they wrap
+            // here rather than via the close-box sheet.
             if type.isAutoClose {
-                box = try await api.closeBox(boxId: box.id)
+                box = try await api.closeBox(
+                    boxId: box.id,
+                    wrappedBy: wrappedBy,
+                    wrappedByDevice: deviceId
+                )
+                _ = WrapStatsService.shared.recordWrap(boxType: type)
             }
             boxes.append(box)
-            toastMessage = "\(type.displayName) #\(box.boxNumber) created"
+            toastMessage = type.isAutoClose
+                ? "\(type.label) \(box.boxNumber) added and closed"
+                : "\(type.label) \(box.boxNumber) added"
             HapticService.success()
         } catch {
             errorMessage = error.localizedDescription
@@ -68,9 +80,10 @@ final class BoxListViewModel: ObservableObject {
         do {
             let response = try await api.finishConsignment(consignmentId: consignment.id)
             if response.ok {
-                toastMessage = "Consignment complete!"
+                toastMessage = "Consignment finished"
                 HapticService.success()
                 showFinishSheet = false
+                isComplete = true
             } else if let missing = response.missingItems, !missing.isEmpty {
                 missingItems = missing
                 showFinishSheet = true

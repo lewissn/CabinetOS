@@ -1,590 +1,264 @@
+import CabinetDesign
 import SwiftUI
-import Foundation
 
 // ============================================================
-// MARK: - Models
+// MARK: - Stock
 // ============================================================
-
-struct PanelMaterial: Identifiable {
-    var id: String { materialName }
-    let materialName: String
-    var qtySheets: Int?
-    var updatedAt: Date?
-}
-
-struct PurchaseItem: Identifiable {
-    let id: String
-    var itemName: String
-    var quantity: Int
-    var note: String?
-    var createdAt: Date?
-}
-
-// ============================================================
-// MARK: - Decodable rows
-// ============================================================
-
-private struct PanelNameRow: Decodable {
-    let materialName: String
-
-    enum CodingKeys: String, CodingKey {
-        case materialName = "material_name"
-    }
-}
-
-private struct PanelStockRow: Decodable {
-    let materialName: String
-    let qtySheets: Int?
-    let updatedAt: String?
-
-    enum CodingKeys: String, CodingKey {
-        case materialName = "material_name"
-        case qtySheets    = "qty_sheets"
-        case updatedAt    = "updated_at"
-    }
-}
-
-private struct PurchaseItemRow: Decodable {
-    let id: String
-    let itemName: String
-    let quantity: Int
-    let note: String?
-    let createdAt: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case itemName  = "item_name"
-        case quantity
-        case note
-        case createdAt = "created_at"
-    }
-
-    func toModel() -> PurchaseItem {
-        PurchaseItem(
-            id: id,
-            itemName: itemName,
-            quantity: quantity,
-            note: note,
-            createdAt: createdAt.flatMap { ISO8601DateFormatter().date(from: $0) }
-        )
-    }
-}
-
-// ============================================================
-// MARK: - Encodable bodies
-// ============================================================
-
-private struct UpsertStockBody: Encodable {
-    let materialName: String
-    let qtySheets: Int
-    let updatedAt: String
-
-    enum CodingKeys: String, CodingKey {
-        case materialName = "material_name"
-        case qtySheets    = "qty_sheets"
-        case updatedAt    = "updated_at"
-    }
-}
-
-private struct PurchaseItemBody: Encodable {
-    let itemName: String
-    let quantity: Int
-    let note: String?
-
-    enum CodingKeys: String, CodingKey {
-        case itemName = "item_name"
-        case quantity
-        case note
-    }
-}
-
-// ============================================================
-// MARK: - Service
-// ============================================================
-
-private final class StockService {
-
-    func fetchPanelNames() async throws -> [String] {
-        let data = try await supabaseGet(
-            table: "price_library_panels",
-            select: "material_name",
-            order: "material_name.asc"
-        )
-        let rows = try JSONDecoder().decode([PanelNameRow].self, from: data)
-        return rows.map(\.materialName)
-    }
-
-    func fetchPanelStock() async throws -> [PanelStockRow] {
-        let data = try await supabaseGet(
-            table: "panel_stock",
-            select: "material_name,qty_sheets,updated_at",
-            order: "updated_at.desc"
-        )
-        return try JSONDecoder().decode([PanelStockRow].self, from: data)
-    }
-
-    func upsertStock(materialName: String, qty: Int) async throws {
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime]
-        let body = UpsertStockBody(
-            materialName: materialName,
-            qtySheets: qty,
-            updatedAt: iso.string(from: Date())
-        )
-        let bodyData = try JSONEncoder().encode(body)
-        try await supabasePost(
-            table: "panel_stock",
-            body: bodyData,
-            extraHeaders: ["Prefer": "resolution=merge-duplicates, return=minimal"]
-        )
-    }
-
-    // MARK: Purchase list
-
-    func fetchPurchaseList() async throws -> [PurchaseItem] {
-        let data = try await supabaseGet(
-            table: "purchase_list",
-            select: "*",
-            order: "created_at.desc"
-        )
-        return try JSONDecoder().decode([PurchaseItemRow].self, from: data).map { $0.toModel() }
-    }
-
-    func addPurchaseItem(name: String, quantity: Int, note: String?) async throws {
-        let body = PurchaseItemBody(itemName: name, quantity: quantity, note: note)
-        let bodyData = try JSONEncoder().encode(body)
-        try await supabasePost(
-            table: "purchase_list",
-            body: bodyData,
-            extraHeaders: ["Prefer": "return=minimal"]
-        )
-    }
-
-    func updatePurchaseItem(id: String, name: String, quantity: Int, note: String?) async throws {
-        let body = PurchaseItemBody(itemName: name, quantity: quantity, note: note)
-        let bodyData = try JSONEncoder().encode(body)
-        try await supabasePatch(
-            table: "purchase_list",
-            filter: "id=eq.\(id)",
-            body: bodyData
-        )
-    }
-
-    func deletePurchaseItem(id: String) async throws {
-        try await supabaseDelete(table: "purchase_list", filter: "id=eq.\(id)")
-    }
-
-    // MARK: - Supabase HTTP helpers
-
-    private func supabaseGet(table: String, select: String, order: String? = nil) async throws -> Data {
-        var components = URLComponents(string: Configuration.supabaseURL + "/rest/v1/" + table)!
-        var items = [URLQueryItem(name: "select", value: select)]
-        if let order { items.append(URLQueryItem(name: "order", value: order)) }
-        components.queryItems = items
-
-        guard let url = components.url else { throw StockError.badURL }
-
-        var request = URLRequest(url: url)
-        applyAuth(&request)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try validate(response, data: data)
-        return data
-    }
-
-    @discardableResult
-    private func supabasePost(table: String, body: Data, extraHeaders: [String: String] = [:]) async throws -> Data {
-        guard let url = URL(string: Configuration.supabaseURL + "/rest/v1/" + table) else {
-            throw StockError.badURL
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        applyAuth(&request)
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.httpBody = body
-        for (k, v) in extraHeaders { request.setValue(v, forHTTPHeaderField: k) }
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try validate(response, data: data)
-        return data
-    }
-
-    private func supabasePatch(table: String, filter: String, body: Data) async throws {
-        var components = URLComponents(string: Configuration.supabaseURL + "/rest/v1/" + table)!
-        components.queryItems = filter.split(separator: "&").map { part in
-            let kv = part.split(separator: "=", maxSplits: 1)
-            return URLQueryItem(name: String(kv[0]), value: kv.count > 1 ? String(kv[1]) : nil)
-        }
-
-        guard let url = components.url else { throw StockError.badURL }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "PATCH"
-        applyAuth(&request)
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
-        request.httpBody = body
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try validate(response, data: data)
-    }
-
-    private func supabaseDelete(table: String, filter: String) async throws {
-        var components = URLComponents(string: Configuration.supabaseURL + "/rest/v1/" + table)!
-        components.queryItems = filter.split(separator: "&").map { part in
-            let kv = part.split(separator: "=", maxSplits: 1)
-            return URLQueryItem(name: String(kv[0]), value: kv.count > 1 ? String(kv[1]) : nil)
-        }
-
-        guard let url = components.url else { throw StockError.badURL }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        applyAuth(&request)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try validate(response, data: data)
-    }
-
-    private func applyAuth(_ request: inout URLRequest) {
-        request.setValue(Configuration.supabaseAnonKey, forHTTPHeaderField: "apikey")
-        request.setValue("Bearer \(Configuration.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-    }
-
-    private func validate(_ response: URLResponse, data: Data) throws {
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-            let body = String(data: data.prefix(500), encoding: .utf8) ?? ""
-            throw StockError.httpError(code, detail: body)
-        }
-    }
-}
-
-enum StockError: LocalizedError {
-    case badURL
-    case httpError(Int, detail: String)
-
-    var errorDescription: String? {
-        switch self {
-        case .badURL:
-            return "Invalid Supabase URL configuration."
-        case .httpError(let code, let detail):
-            if detail.isEmpty { return "Server returned HTTP \(code)." }
-            return "HTTP \(code): \(detail)"
-        }
-    }
-}
-
-// ============================================================
-// MARK: - ViewModel
-// ============================================================
-
-@MainActor
-final class StockViewModel: ObservableObject {
-
-    // Materials
-    @Published var materials: [PanelMaterial] = []
-    @Published var recentlyUpdated: [PanelMaterial] = []
-    @Published var searchText = ""
-    @Published var materialsLoading = false
-    @Published var materialsError: String?
-
-    // Adjustment sheet
-    @Published var selectedMaterial: PanelMaterial?
-
-    // Purchase list
-    @Published var purchaseItems: [PurchaseItem] = []
-    @Published var purchaseLoading = false
-    @Published var purchaseError: String?
-
-    // Purchase sheet
-    @Published var showingPurchaseSheet = false
-    @Published var editingPurchaseItem: PurchaseItem?
-
-    private let service = StockService()
-
-    var filteredMaterials: [PanelMaterial] {
-        if searchText.isEmpty { return materials }
-        return materials.filter {
-            $0.materialName.localizedCaseInsensitiveContains(searchText)
-        }
-    }
-
-    // MARK: Materials
-
-    func loadMaterials() async {
-        materialsLoading = true
-        materialsError = nil
-        do {
-            async let namesTask = service.fetchPanelNames()
-            async let stockTask = service.fetchPanelStock()
-
-            let names = try await namesTask
-            let stockRows = try await stockTask
-
-            let stockMap = Dictionary(
-                stockRows.map { ($0.materialName, $0) },
-                uniquingKeysWith: { first, _ in first }
-            )
-
-            let iso = ISO8601DateFormatter()
-            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
-            materials = names.map { name in
-                let stock = stockMap[name]
-                return PanelMaterial(
-                    materialName: name,
-                    qtySheets: stock?.qtySheets,
-                    updatedAt: stock?.updatedAt.flatMap { iso.date(from: $0) }
-                )
-            }
-
-            recentlyUpdated = stockRows.prefix(10).compactMap { row in
-                materials.first { $0.materialName == row.materialName }
-            }
-
-            materialsLoading = false
-        } catch {
-            materialsError = error.localizedDescription
-            materialsLoading = false
-        }
-    }
-
-    func saveAdjustment(materialName: String, qty: Int) async {
-        do {
-            try await service.upsertStock(materialName: materialName, qty: qty)
-            await loadMaterials()
-        } catch {
-            materialsError = error.localizedDescription
-        }
-    }
-
-    // MARK: Purchase list
-
-    func loadPurchaseList() async {
-        purchaseLoading = true
-        purchaseError = nil
-        do {
-            purchaseItems = try await service.fetchPurchaseList()
-            purchaseLoading = false
-        } catch {
-            purchaseError = error.localizedDescription
-            purchaseLoading = false
-        }
-    }
-
-    func addPurchaseItem(name: String, quantity: Int, note: String?) async {
-        do {
-            try await service.addPurchaseItem(name: name, quantity: quantity, note: note)
-            await loadPurchaseList()
-        } catch {
-            purchaseError = error.localizedDescription
-        }
-    }
-
-    func updatePurchaseItem(id: String, name: String, quantity: Int, note: String?) async {
-        do {
-            try await service.updatePurchaseItem(id: id, name: name, quantity: quantity, note: note)
-            await loadPurchaseList()
-        } catch {
-            purchaseError = error.localizedDescription
-        }
-    }
-
-    func deletePurchaseItem(id: String) async {
-        do {
-            try await service.deletePurchaseItem(id: id)
-            await loadPurchaseList()
-        } catch {
-            purchaseError = error.localizedDescription
-        }
-    }
-}
-
-// ============================================================
-// MARK: - Stock View (main)
-// ============================================================
+//
+// Sheet counts by board, and the purchase list. The data has no reorder
+// level, so no board is flagged "order soon"; and purchase items have no
+// bought/not-bought state, so they're rows to edit or swipe away rather
+// than boxes to tick.
 
 struct StockView: View {
     @StateObject private var vm = StockViewModel()
-    @State private var segment: Segment = .materials
+    @EnvironmentObject private var toaster: Toaster
+    @AppStorage("stock.segment") private var segment: Segment = .materials
 
     enum Segment: String, CaseIterable {
-        case materials     = "Materials"
-        case purchaseList  = "Purchase List"
+        case materials
+        case purchaseList
     }
+
+    private var counted: [PanelMaterial] { vm.materials.filter { $0.qtySheets != nil } }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                Picker("Section", selection: $segment) {
-                    ForEach(Segment.allCases, id: \.self) { s in
-                        Text(s.rawValue).tag(s)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+            List {
+                ScreenTitle("Stock").paperListRow()
+
+                summary.paperListRow(top: PaperSpace.xxl)
+
+                PaperSegmented([(Segment.materials, "Boards"), (.purchaseList, "To buy")],
+                               selection: $segment, accessibilityLabel: "Stock section")
+                    .paperListRow(top: PaperSpace.xxl)
 
                 switch segment {
-                case .materials:
-                    MaterialsSectionView(vm: vm)
-                case .purchaseList:
-                    PurchaseListSectionView(vm: vm)
+                case .materials: materialsRows
+                case .purchaseList: purchaseRows
+                }
+
+                Color.clear.frame(height: 120).paperListRow()
+            }
+            .paperList()
+            .refreshable {
+                await vm.loadMaterials()
+                await vm.loadPurchaseList()
+            }
+            .paperRootScreen()
+            .task {
+                await vm.loadMaterials()
+                await vm.loadPurchaseList()
+            }
+            // As before, each section reloads when it's opened, and the screen
+            // reloads when you come back to the tab.
+            .onChange(of: segment) { _, now in
+                Task {
+                    if now == .materials { await vm.loadMaterials() } else { await vm.loadPurchaseList() }
                 }
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Stock")
-        }
-    }
-}
-
-// ============================================================
-// MARK: - Materials Section
-// ============================================================
-
-private struct MaterialsSectionView: View {
-    @ObservedObject var vm: StockViewModel
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("Search panels\u{2026}", text: $vm.searchText)
-                    .textFieldStyle(.plain)
-                if !vm.searchText.isEmpty {
-                    Button { vm.searchText = "" } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
+            .onTabReturn {
+                await vm.loadMaterials()
+                await vm.loadPurchaseList()
+            }
+            .sheet(item: $vm.selectedMaterial) { material in
+                CountSheet(material: material) { qty in
+                    Task {
+                        await vm.saveAdjustment(materialName: material.materialName, qty: qty)
+                        if vm.materialsError == nil {
+                            toaster.show("\(material.materialName) · \(Format.count(qty, "sheet")) saved")
+                        }
                     }
                 }
+                .paperSheet(detents: [.medium, .large])
             }
-            .padding(12)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .padding(.horizontal, 20)
-            .padding(.bottom, 8)
-
-            if vm.materialsLoading {
-                Spacer()
-                ProgressView()
-                Spacer()
-            } else if let error = vm.materialsError {
-                errorView(error) { Task { await vm.loadMaterials() } }
-            } else {
-                materialsList
-            }
-        }
-        .task { await vm.loadMaterials() }
-        .sheet(item: $vm.selectedMaterial) { material in
-            MaterialAdjustmentSheet(material: material) { qty in
-                Task { await vm.saveAdjustment(materialName: material.materialName, qty: qty) }
-            }
-        }
-    }
-
-    private var materialsList: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                if vm.searchText.isEmpty && !vm.recentlyUpdated.isEmpty {
-                    recentSection
-                }
-
-                ForEach(vm.filteredMaterials) { material in
-                    MaterialRow(material: material)
-                        .contentShape(Rectangle())
-                        .onTapGesture { vm.selectedMaterial = material }
-
-                    if material.id != vm.filteredMaterials.last?.id {
-                        Divider().padding(.leading, 20)
+            .sheet(isPresented: $vm.showingPurchaseSheet) {
+                PurchaseItemSheet(editingItem: vm.editingPurchaseItem) { name, qty, note in
+                    Task {
+                        if let existing = vm.editingPurchaseItem {
+                            await vm.updatePurchaseItem(id: existing.id, name: name, quantity: qty, note: note)
+                        } else {
+                            await vm.addPurchaseItem(name: name, quantity: qty, note: note)
+                        }
                     }
                 }
+                .paperSheet(detents: [.medium, .large])
             }
-            .padding(.bottom, 32)
         }
     }
+
+    // MARK: Summary
 
     @ViewBuilder
-    private var recentSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Recently Updated")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
+    private var summary: some View {
+        if vm.materials.isEmpty {
+            Headline(value: "–", unit: "sheets counted", detail: vm.materialsLoading ? "Loading" : nil)
+        } else {
+            let total = counted.compactMap(\.qtySheets).reduce(0, +)
+            let notCounted = vm.materials.count - counted.count
+            Headline(value: PaperFormat.int(total), unit: total == 1 ? "sheet counted" : "sheets counted",
+                     detail: "\(Format.count(vm.materials.count, "board")) · \(PaperFormat.int(notCounted)) not counted yet")
+        }
+    }
 
-            ForEach(vm.recentlyUpdated) { material in
-                MaterialRow(material: material)
-                    .contentShape(Rectangle())
-                    .onTapGesture { vm.selectedMaterial = material }
+    // MARK: Boards
 
-                if material.id != vm.recentlyUpdated.last?.id {
-                    Divider().padding(.leading, 20)
+    @ViewBuilder
+    private var materialsRows: some View {
+        PaperSearchField(text: $vm.searchText, prompt: "Search boards")
+            .paperListRow(top: PaperSpace.l)
+
+        if vm.materialsLoading && vm.materials.isEmpty {
+            LoadingLine("Loading boards").paperListRow()
+        } else if let error = vm.materialsError {
+            PaperEmptyState("Stock didn't load", message: error, actionTitle: "Try again") {
+                Task { await vm.loadMaterials() }
+            }
+            .paperListRow()
+        } else {
+            if vm.searchText.isEmpty && !vm.recentlyUpdated.isEmpty {
+                PaperSectionHeader("Recently counted").paperListRow(top: PaperSpace.xxl)
+                ForEach(vm.recentlyUpdated) { material in
+                    materialButton(material)
                 }
             }
+
+            PaperSectionHeader(vm.searchText.isEmpty ? "All boards" : Format.count(vm.filteredMaterials.count, "board")) {
+                Text("Tap to count").paperType(.footnote).foregroundStyle(PaperColor.tertiary)
+            }
+            .paperListRow(top: PaperSpace.section)
+
+            if vm.filteredMaterials.isEmpty {
+                Text("No boards match \u{201C}\(vm.searchText)\u{201D}.")
+                    .paperType(.subhead).foregroundStyle(PaperColor.secondary)
+                    .padding(.vertical, PaperSpace.m)
+                    .paperListRow()
+            }
+            ForEach(vm.filteredMaterials) { material in
+                materialButton(material)
+            }
         }
-        .padding(.bottom, 12)
+    }
 
-        Divider()
-            .padding(.vertical, 4)
+    private func materialButton(_ material: PanelMaterial) -> some View {
+        Button { vm.selectedMaterial = material } label: {
+            MaterialRow(material: material)
+        }
+        .buttonStyle(.plain)
+        .paperListRow()
+    }
 
-        Text("All Panels")
-            .font(.caption)
-            .fontWeight(.semibold)
-            .foregroundStyle(.secondary)
-            .textCase(.uppercase)
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
+    // MARK: To buy
+
+    @ViewBuilder
+    private var purchaseRows: some View {
+        PaperSectionHeader("To buy") {
+            Button("Add") {
+                vm.editingPurchaseItem = nil
+                vm.showingPurchaseSheet = true
+            }
+            .buttonStyle(.paperText(PaperColor.ink, .footnote, weight: .semibold))
+            .accessibilityLabel("Add an item to buy")
+        }
+        .paperListRow(top: PaperSpace.xxl)
+
+        if vm.purchaseLoading && vm.purchaseItems.isEmpty {
+            LoadingLine("Loading the list").paperListRow()
+        } else if let error = vm.purchaseError {
+            PaperEmptyState("The list didn't load", message: error, actionTitle: "Try again") {
+                Task { await vm.loadPurchaseList() }
+            }
+            .paperListRow()
+        } else if vm.purchaseItems.isEmpty {
+            PaperEmptyState("Nothing to buy", message: "Add anything the workshop is running low on.", actionTitle: "Add an item") {
+                vm.editingPurchaseItem = nil
+                vm.showingPurchaseSheet = true
+            }
+            .paperListRow()
+        } else {
+            ForEach(vm.purchaseItems) { item in
+                Button {
+                    vm.editingPurchaseItem = item
+                    vm.showingPurchaseSheet = true
+                } label: {
+                    PurchaseItemRowView(item: item)
+                }
+                .buttonStyle(.plain)
+                .paperListRow()
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) {
+                        Task { await vm.deletePurchaseItem(id: item.id) }
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+            }
+            Text("Tap an item to change it. Swipe left to take it off the list.")
+                .paperType(.footnote)
+                .foregroundStyle(PaperColor.tertiary)
+                .padding(.top, PaperSpace.m)
+                .paperListRow()
+        }
     }
 }
 
 // ============================================================
-// MARK: - Material Row
+// MARK: - Rows
 // ============================================================
 
 private struct MaterialRow: View {
     let material: PanelMaterial
 
     var body: some View {
-        HStack {
-            Text(material.materialName)
-                .font(.body)
-                .lineLimit(2)
-
-            Spacer(minLength: 8)
-
-            if let qty = material.qtySheets {
-                Text("\(qty)")
-                    .font(.body)
-                    .fontWeight(.semibold)
-                    .monospacedDigit()
-                    .foregroundStyle(qty == 0 ? .secondary : .primary)
-            } else {
-                Text("—")
-                    .font(.body)
-                    .foregroundStyle(.quaternary)
+        RowContainer(minHeight: 60) {
+            HStack(alignment: .center, spacing: PaperSpace.m) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(material.materialName).paperType(.body).foregroundStyle(PaperColor.ink).lineLimit(2)
+                    Text(material.qtySheets == nil
+                         ? "Not counted yet"
+                         : material.updatedAt.map { "Counted \(Format.when($0))" } ?? "Counted")
+                        .paperType(.footnote, numeric: true)
+                        .foregroundStyle(PaperColor.secondary)
+                }
+                Spacer(minLength: PaperSpace.m)
+                Text(material.qtySheets.map { PaperFormat.int($0) } ?? "–")
+                    .paperType(.figureS, numeric: true)
+                    .foregroundStyle(material.qtySheets == nil ? PaperColor.faint : PaperColor.ink)
             }
-
-            Image(systemName: "chevron.right")
-                .font(.caption2)
-                .foregroundStyle(.quaternary)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens the count")
+    }
+}
+
+private struct PurchaseItemRowView: View {
+    let item: PurchaseItem
+
+    var body: some View {
+        RowContainer {
+            HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.itemName).paperType(.body).foregroundStyle(PaperColor.ink)
+                    if let note = item.note, !note.isEmpty {
+                        Text(note).paperType(.footnote).foregroundStyle(PaperColor.secondary).lineLimit(2)
+                    }
+                }
+                Spacer(minLength: PaperSpace.m)
+                Text("× \(PaperFormat.int(item.quantity))")
+                    .paperType(.subhead, numeric: true)
+                    .foregroundStyle(PaperColor.body)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
 // ============================================================
-// MARK: - Adjustment Sheet
+// MARK: - Count sheet
 // ============================================================
 
-private struct MaterialAdjustmentSheet: View {
+/// A big number between two 60 pt buttons; the number can be typed too.
+private struct CountSheet: View {
     let material: PanelMaterial
     let onSave: (Int) -> Void
 
@@ -599,183 +273,60 @@ private struct MaterialAdjustmentSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 28) {
-                Text(material.materialName)
-                    .font(.headline)
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 8)
+        VStack(alignment: .leading, spacing: 0) {
+            SheetScreen("Count", scrolls: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(material.materialName)
+                        .paperType(.headline)
+                        .foregroundStyle(PaperColor.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, PaperSpace.l)
+                    Text(material.qtySheets.map { "Last count \(Format.count($0, "sheet"))" + (material.updatedAt.map { ", \(Format.when($0))" } ?? "") }
+                         ?? "Not counted before")
+                        .paperType(.footnote, numeric: true)
+                        .foregroundStyle(PaperColor.secondary)
+                        .padding(.top, PaperSpace.xxs)
 
-                if let current = material.qtySheets {
-                    Text("Current stock: \(current) sheets")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("No count recorded yet")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                HStack(spacing: 24) {
-                    Button { if quantity > 0 { quantity -= 1 } } label: {
-                        Image(systemName: "minus.circle.fill")
-                            .font(.system(size: 36))
-                            .foregroundStyle(.red)
+                    HStack(spacing: PaperSpace.xl) {
+                        stepper(.minus, label: "One fewer") { quantity = max(0, quantity - 1) }
+                        TextField("0", value: $quantity, format: .number)
+                            .paperType(.heroXL, numeric: true)
+                            .foregroundStyle(PaperColor.ink)
+                            .multilineTextAlignment(.center)
+                            .keyboardType(.numberPad)
+                            .focused($fieldFocused)
+                            .frame(minWidth: 120)
+                            .accessibilityLabel("Sheets")
+                        stepper(.plus, label: "One more") { quantity += 1 }
                     }
-
-                    TextField("0", value: $quantity, format: .number)
-                        .textFieldStyle(.roundedBorder)
-                        .keyboardType(.numberPad)
-                        .frame(width: 80)
-                        .multilineTextAlignment(.center)
-                        .font(.title.weight(.bold))
-                        .focused($fieldFocused)
-
-                    Button { quantity += 1 } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 36))
-                            .foregroundStyle(.green)
-                    }
-                }
-
-                Spacer()
-            }
-            .padding(24)
-            .navigationTitle("Adjust Stock")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        onSave(quantity)
-                        dismiss()
-                    }
-                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, PaperSpace.xxl)
+                    Text("sheets").paperType(.subhead).foregroundStyle(PaperColor.secondary).frame(maxWidth: .infinity)
+                    Spacer(minLength: PaperSpace.l)
                 }
             }
+            Button("Save count") {
+                onSave(quantity)
+                dismiss()
+            }
+            .buttonStyle(.paperPill(.accent, .floor, fullWidth: true))
+            .screen()
+            .padding(.vertical, PaperSpace.l)
         }
-        .presentationDetents([.medium])
-    }
-}
-
-// ============================================================
-// MARK: - Purchase List Section
-// ============================================================
-
-private struct PurchaseListSectionView: View {
-    @ObservedObject var vm: StockViewModel
-
-    var body: some View {
-        Group {
-            if vm.purchaseLoading {
-                Spacer()
-                ProgressView()
-                Spacer()
-            } else if let error = vm.purchaseError {
-                errorView(error) { Task { await vm.loadPurchaseList() } }
-            } else if vm.purchaseItems.isEmpty {
-                emptyPurchaseList
-            } else {
-                purchaseList
-            }
-        }
-        .task { await vm.loadPurchaseList() }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    vm.editingPurchaseItem = nil
-                    vm.showingPurchaseSheet = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-            }
-        }
-        .sheet(isPresented: $vm.showingPurchaseSheet) {
-            PurchaseItemSheet(editingItem: vm.editingPurchaseItem) { name, qty, note in
-                Task {
-                    if let existing = vm.editingPurchaseItem {
-                        await vm.updatePurchaseItem(id: existing.id, name: name, quantity: qty, note: note)
-                    } else {
-                        await vm.addPurchaseItem(name: name, quantity: qty, note: note)
-                    }
-                }
-            }
-        }
+        .paperBackground()
     }
 
-    private var emptyPurchaseList: some View {
-        VStack(spacing: 12) {
-            Spacer()
-            Image(systemName: "cart")
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary)
-            Text("No items on the purchase list.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Button("Add Item") {
-                vm.editingPurchaseItem = nil
-                vm.showingPurchaseSheet = true
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-            Spacer()
+    private func stepper(_ glyph: PaperGlyph, label: String, action: @escaping () -> Void) -> some View {
+        Button {
+            withAnimation(.snappy) { action() }
+        } label: {
+            PaperIcon(glyph, size: 22, lineWidth: 2)
+                .frame(width: 60, height: 60)
+                .overlay(Circle().strokeBorder(PaperColor.border, lineWidth: 1))
+                .contentShape(Circle())
         }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var purchaseList: some View {
-        List {
-            ForEach(vm.purchaseItems) { item in
-                PurchaseItemRowView(item: item)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        vm.editingPurchaseItem = item
-                        vm.showingPurchaseSheet = true
-                    }
-            }
-            .onDelete { indexSet in
-                for index in indexSet {
-                    let item = vm.purchaseItems[index]
-                    Task { await vm.deletePurchaseItem(id: item.id) }
-                }
-            }
-        }
-        .listStyle(.insetGrouped)
-    }
-}
-
-// ============================================================
-// MARK: - Purchase Item Row
-// ============================================================
-
-private struct PurchaseItemRowView: View {
-    let item: PurchaseItem
-
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.itemName)
-                    .font(.body)
-                    .fontWeight(.medium)
-
-                if let note = item.note, !note.isEmpty {
-                    Text(note)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-            }
-
-            Spacer(minLength: 8)
-
-            Text("×\(item.quantity)")
-                .font(.body)
-                .fontWeight(.semibold)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }
 
@@ -801,54 +352,46 @@ private struct PurchaseItemSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("Item") {
-                    TextField("Item Name", text: $itemName)
-                    Stepper("Quantity: \(quantity)", value: $quantity, in: 1...9999)
-                }
-                Section("Note") {
-                    TextField("Optional note", text: $note)
-                }
-            }
-            .navigationTitle(editingItem == nil ? "Add Item" : "Edit Item")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        onSave(itemName, quantity, note.isEmpty ? nil : note)
-                        dismiss()
+        SheetScreen(editingItem == nil ? "Add an item" : "Change item") {
+            VStack(alignment: .leading, spacing: PaperSpace.xxl) {
+                PaperUnderlineField("Item", text: $itemName, placeholder: "What to buy")
+                    .padding(.top, PaperSpace.l)
+
+                VStack(alignment: .leading, spacing: PaperSpace.s) {
+                    PaperLabel("Quantity")
+                    HStack(spacing: PaperSpace.l) {
+                        quantityButton(.minus, label: "One fewer") { quantity = max(1, quantity - 1) }
+                        Text(PaperFormat.int(quantity))
+                            .paperType(.figure, numeric: true)
+                            .foregroundStyle(PaperColor.ink)
+                            .frame(minWidth: 48)
+                            .contentTransition(.numericText())
+                        quantityButton(.plus, label: "One more") { quantity = min(9999, quantity + 1) }
                     }
-                    .fontWeight(.semibold)
-                    .disabled(itemName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
+
+                PaperUnderlineField("Note (optional)", text: $note)
+
+                Button("Save") {
+                    onSave(itemName, quantity, note.isEmpty ? nil : note)
+                    dismiss()
+                }
+                .buttonStyle(.paperPill(.accent, .large, fullWidth: true))
+                .disabled(itemName.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
     }
-}
 
-// ============================================================
-// MARK: - Shared error view
-// ============================================================
-
-fileprivate func errorView(_ message: String, retry: @escaping () -> Void) -> some View {
-    VStack(spacing: 12) {
-        Spacer()
-        Image(systemName: "exclamationmark.triangle")
-            .font(.system(size: 32))
-            .foregroundStyle(.orange)
-        Text(message)
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-        Button("Retry", action: retry)
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-        Spacer()
+    private func quantityButton(_ glyph: PaperGlyph, label: String, action: @escaping () -> Void) -> some View {
+        Button {
+            withAnimation(.snappy) { action() }
+        } label: {
+            PaperIcon(glyph, size: 18, lineWidth: 2)
+                .frame(width: 44, height: 44)
+                .overlay(Circle().strokeBorder(PaperColor.border, lineWidth: 1))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
-    .frame(maxWidth: .infinity)
-    .padding(24)
 }

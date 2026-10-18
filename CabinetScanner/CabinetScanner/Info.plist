@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Only what GENERATE_INFOPLIST_FILE cannot express. Everything else —
+	  camera usage, orientations, launch screen — stays in the build settings
+	  as INFOPLIST_KEY_* and is merged on top of this file.
+
+	  The URL scheme is how a scanned label, and a notification, open a job:
+	      cabinetscanner://job/<job_index_id>
+	  See App/DeepLink.swift.
+	-->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>uk.co.thecabinetshop.scanner.job</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>cabinetscanner</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
