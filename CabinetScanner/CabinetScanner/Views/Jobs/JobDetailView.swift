@@ -15,20 +15,22 @@ struct JobDetailView: View {
     let jobId: String
     var knownTitle: String?
     var jobTitle: String?
+    var backLabel: String = "Jobs"
 
     @StateObject private var viewModel: JobDetailViewModel
     @Environment(\.openURL) private var openURL
     @State private var showingProof = false
 
-    init(jobId: String, knownTitle: String? = nil, jobTitle: String? = nil) {
+    init(jobId: String, knownTitle: String? = nil, jobTitle: String? = nil, backLabel: String = "Jobs") {
         self.jobId = jobId
+        self.backLabel = backLabel
         self.knownTitle = knownTitle
         self.jobTitle = jobTitle
         _viewModel = StateObject(wrappedValue: JobDetailViewModel(jobId: jobId))
     }
 
     var body: some View {
-        PushedScreen(back: "Jobs", onRefresh: { await viewModel.load() }) {
+        PushedScreen(back: backLabel, onRefresh: { await viewModel.load() }) {
             Group {
                 if let detail = viewModel.detail {
                     page(detail)

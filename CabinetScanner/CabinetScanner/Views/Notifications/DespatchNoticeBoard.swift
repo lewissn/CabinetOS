@@ -1,6 +1,7 @@
+import CabinetDesign
 import SwiftUI
 
-// MARK: - Dashboard notice area
+// MARK: - Today's alerts
 //
 // The unread despatch changes, on the screen the bench already has open.
 //
@@ -21,128 +22,103 @@ struct DespatchNoticeBoard: View {
 
     var body: some View {
         if !shown.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Label("Despatch Changes", systemImage: "calendar.badge.exclamationmark")
-                        .font(.headline)
-                    Spacer()
+            VStack(alignment: .leading, spacing: 0) {
+                PaperSectionHeader("Alerts") {
                     Button("See all") { showingAll = true }
-                        .font(.subheadline)
+                        .buttonStyle(.paperText(PaperColor.secondary, .footnote))
                 }
 
-                VStack(spacing: 8) {
-                    ForEach(shown) { notification in
-                        NoticeCard(notification: notification) {
-                            showingAll = true
-                        }
+                ForEach(shown) { notification in
+                    Button { showingAll = true } label: {
+                        AlertRow(notification: notification)
                     }
+                    .buttonStyle(.plain)
                 }
 
                 if service.unreadCount > shown.count {
-                    Button {
-                        showingAll = true
-                    } label: {
-                        Text("\(service.unreadCount - shown.count) more")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    Button("\(service.unreadCount - shown.count) more") { showingAll = true }
+                        .buttonStyle(.paperText(PaperColor.secondary, .footnote))
                 }
             }
         }
     }
 }
 
-/// One notice, sized to be read at arm's length from a bench.
-private struct NoticeCard: View {
+/// One alert: a status dot, the change, and when. Sized to be read at arm's
+/// length from a bench.
+struct AlertRow: View {
     let notification: AppNotification
-    let onTap: () -> Void
+    var showsChevron = false
 
     var body: some View {
-        Button(action: onTap) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: notification.systemImage)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(notification.accentColour)
-                    .frame(width: 28)
+        RowContainer {
+            HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
+                Circle()
+                    .fill(notification.read ? Color.clear : notification.tone.color)
+                    .overlay(Circle().strokeBorder(notification.read ? PaperColor.dot : .clear, lineWidth: 1))
+                    .frame(width: 7, height: 7)
+                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] }
 
                 VStack(alignment: .leading, spacing: 3) {
+                    // Unread is carried by weight and the dot rather than a
+                    // background colour.
                     Text(notification.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
+                        .font(.brand(16, notification.read ? .regular : .medium, relativeTo: .body))
+                        .monospacedDigit()
+                        .foregroundStyle(PaperColor.ink)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
 
                     if let body = notification.body {
                         Text(body)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .paperType(.footnote, numeric: true)
+                            .foregroundStyle(PaperColor.secondary)
                             .multilineTextAlignment(.leading)
-                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
+                    // "That is tomorrow." Only ever present on a date moving
+                    // towards us, so it's the one line in the act-soon colour.
                     if let urgency = notification.urgencyNote {
                         Text(urgency)
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(notification.accentColour)
+                            .paperType(.footnote)
+                            .foregroundStyle(Tone.soon.textColor)
                     }
+
+                    HStack(spacing: 6) {
+                        if let when = JobDateFormatting.relative(fromISO8601: notification.detectedAt) {
+                            Text(when)
+                        }
+                        if notification.detectionSource == "poll" {
+                            // Worth distinguishing: a change found by the sweep
+                            // rather than announced by ShopVOX may have
+                            // happened some time before it was noticed.
+                            Text("· found by check")
+                        }
+                    }
+                    .paperType(.caption)
+                    .foregroundStyle(PaperColor.tertiary)
                 }
 
                 Spacer(minLength: 0)
 
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                if showsChevron {
+                    PaperIcon(.chevronRight, size: 14, color: PaperColor.faint)
+                }
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    // A date brought forward gets an edge; a postponement does
-                    // not. The asymmetry is the message.
-                    .strokeBorder(
-                        notification.isUrgent ? notification.accentColour.opacity(0.5) : .clear,
-                        lineWidth: 1.5
-                    )
-            )
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
     }
 }
 
 // MARK: - Bell
 
-/// The dashboard's way through to the full list, with the unread count on it.
+/// Today's way through to the full list, with the unread count on it.
 struct NotificationBell: View {
     @ObservedObject private var service = NotificationService.shared
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            ZStack(alignment: .topTrailing) {
-                Image(systemName: service.unreadCount > 0 ? "bell.badge.fill" : "bell")
-                    .font(.system(size: 20))
-                    .foregroundStyle(service.unreadCount > 0 ? .orange : .secondary)
-
-                if service.unreadCount > 0 {
-                    Text(service.unreadCount > 99 ? "99+" : "\(service.unreadCount)")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(Color.red, in: Capsule())
-                        .offset(x: 10, y: -8)
-                }
-            }
-            .frame(width: 44, height: 44)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(
-            service.unreadCount > 0
-                ? "Despatch alerts, \(service.unreadCount) unread"
-                : "Despatch alerts"
-        )
+        BarIcon(glyph: .bell, badge: service.unreadCount, label: "Despatch alerts", action: action)
     }
 }
