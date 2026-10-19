@@ -5,7 +5,7 @@ import SwiftUI
 // MARK: - Today
 // ============================================================
 //
-// A dashboard that fits on one screen: the day that matters as a ring, three
+// A dashboard that fits on one screen: the day that matters as a bar, three
 // quiet figures, the week's rhythm and one line of news. The figures are the
 // dispatch query (jobs due over the next five working days, with each job's
 // ShopVOX step) and the week's packing from ReportingService; nothing here is
@@ -27,7 +27,7 @@ struct DashboardView: View {
     /// Once the dispatch figures have loaded, a refresh keeps showing them
     /// rather than collapsing the page while it reloads.
     @State private var hasLoaded = false
-    /// Drives the first draw: the ring sweeps round and the bars rise once
+    /// Drives the first draw: the bar grows in and the day bars rise once
     /// there's something to show.
     @State private var revealed = false
     @State private var isRefreshing = false
@@ -73,12 +73,12 @@ struct DashboardView: View {
                     } else {
                         GeometryReader { geo in
                             let height = geo.size.height
-                            if let ring = ringFitting(height) {
-                                dashboard(ring: ring)
+                            if fits(height) {
+                                dashboard
                                     .screen()
                                     .frame(height: height, alignment: .top)
                             } else {
-                                ScrollView { dashboard(ring: 140).screen() }
+                                ScrollView { dashboard.screen() }
                                     .refreshable { await refreshAll() }
                             }
                         }
@@ -111,7 +111,7 @@ struct DashboardView: View {
                 )
             }
             .task {
-                // Figures kept from earlier today show at once, ring drawn,
+                // Figures kept from earlier today show at once, bar drawn,
                 // while fresh ones load over them.
                 if vm.state == .loaded, !hasLoaded {
                     hasLoaded = true
@@ -209,17 +209,14 @@ struct DashboardView: View {
     /// clustered at the top of a tall screen.
     private var isWide: Bool { sizeClass == .regular }
 
-    /// The ring's size for the height there is, or nil when the page has to
-    /// scroll: a very short screen, or text set large enough that the fixed
-    /// layout wouldn't hold. Everything but the ring needs about 410 pt; the
-    /// ring takes what's left, within limits.
-    private func ringFitting(_ height: CGFloat) -> CGFloat? {
-        guard dynamicTypeSize <= .xLarge else { return nil }
-        let ring = min(height - 410, isWide ? 260 : 176)
-        return ring >= 128 ? ring : nil
+    /// Whether the dashboard fits the height without scrolling: not on a very
+    /// short screen, or with text set large enough that it wouldn't hold.
+    /// Everything together needs about 540 pt.
+    private func fits(_ height: CGFloat) -> Bool {
+        dynamicTypeSize <= .xLarge && height >= 540
     }
 
-    private func dashboard(ring: CGFloat) -> some View {
+    private var dashboard: some View {
         let focus = focus
         return VStack(alignment: .leading, spacing: 0) {
             gap(PaperSpace.l, 56)
@@ -229,7 +226,7 @@ struct DashboardView: View {
                     Task { await refreshAll() }
                 }
             } else {
-                FocusRing(focus: focus, isLoaded: showsDispatch, revealed: revealed, diameter: ring) {
+                FocusBar(focus: focus, isLoaded: showsDispatch, revealed: revealed, large: isWide) {
                     open(focus)
                 }
             }

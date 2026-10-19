@@ -159,8 +159,11 @@ struct ProductionJobRow: View {
             due: job.isComplete == true
                 ? ("Despatched", .done)
                 : DueLine.make(isoDate: job.orderDueDate, isOverdue: job.isOverdue),
-            detail: job.isComplete == true ? nil : job.currentStep.map { "At \($0)" },
+            // The step bar says where it is; the words are the fallback for a
+            // server that doesn't send steps yet.
+            detail: job.isComplete == true || job.steps?.isEmpty == false ? nil : job.currentStep.map { "At \($0)" },
             tag: job.shippingMethod,
+            steps: job.steps,
             source: job.dataSource,
             isStale: job.isStale
         )

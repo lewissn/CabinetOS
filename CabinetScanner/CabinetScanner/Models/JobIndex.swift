@@ -509,6 +509,9 @@ struct ProductionJob: Decodable, Identifiable, Hashable {
     let isComplete: Bool?
     let dataSource: JobDataSource
     let isStale: Bool
+    /// The job's ShopVOX steps in workflow order, for the row's step bar.
+    /// Absent from servers before 19 Oct 2026.
+    let steps: [BoardStep]?
 
     var displayTitle: String { customerName ?? jobTitle ?? "Untitled job" }
 
@@ -592,4 +595,16 @@ struct CourierConsignmentStep: Decodable, Identifiable, Hashable {
     let state: String?
 
     var id: String { stepName }
+}
+
+/// One step of a job on the board: just enough to draw its step bar. The
+/// states are the job page's own (pending, ready, started, paused, idling,
+/// stopped, completed, unknown).
+struct BoardStep: Decodable, Hashable {
+    let name: String
+    let state: String
+
+    var isComplete: Bool { state == "completed" }
+    /// Drawn as an outline, as the job page's track does.
+    var isHalted: Bool { state == "paused" || state == "idling" || state == "stopped" }
 }

@@ -107,6 +107,8 @@ struct JobRowContent: View {
     let detail: String?
     /// The shipping method, as a small outlined tag.
     var tag: String? = nil
+    /// The job's steps, drawn as a small step bar under the reference.
+    var steps: [BoardStep]? = nil
     let source: JobDataSource
     let isStale: Bool
 
@@ -126,6 +128,19 @@ struct JobRowContent: View {
                             .foregroundStyle(PaperColor.secondary)
                             .lineLimit(1)
                     }
+                }
+                if let steps, !steps.isEmpty {
+                    let track = BoardStepTrack(steps: steps)
+                    HStack(spacing: PaperSpace.m) {
+                        track.frame(maxWidth: 140)
+                        Text(track.caption)
+                            .paperType(.caption, numeric: true)
+                            .foregroundStyle(PaperColor.secondary)
+                            .lineLimit(1)
+                    }
+                    .padding(.top, 2)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(track.caption)
                 }
                 HStack(spacing: PaperSpace.m) {
                     if let tag, !tag.isEmpty {
