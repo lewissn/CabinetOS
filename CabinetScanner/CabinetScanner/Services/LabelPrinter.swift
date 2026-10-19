@@ -20,6 +20,9 @@ final class LabelPrinter: NSObject, UIPrintInteractionControllerDelegate {
 
     enum Outcome {
         case printed(printerName: String)
+        /// Printed, but the printer didn't offer the label size this time,
+        /// so it went on whatever it did offer (usually A4).
+        case printedOnOtherPaper(printerName: String, paper: String)
         case cancelled
         case failed(String)
     }
@@ -43,15 +46,29 @@ final class LabelPrinter: NSObject, UIPrintInteractionControllerDelegate {
         }
         guard let url = UserDefaults.standard.url(forKey: urlKey) else { return .cancelled }
 
-        let printer = UIPrinter(url: url)
-        let controller = makeController(pdf: pdf, jobName: jobName)
+        let printer = savedPrinter(for: url)
         let name = savedPrinterName ?? printer.displayName
+
+        // Ask the printer what it has loaded before every label. A printer
+        // rebuilt from its address and never asked has no paper list of its
+        // own, and iOS fills in A4 and Letter: that is how labels went to A4
+        // after a few good prints.
+        guard await contact(printer) else {
+            return .failed("\(name) didn't answer. Check it's switched on and on the same Wi-Fi, then print again.")
+        }
+
+        let controller = makeController(pdf: pdf, jobName: jobName)
+        Self.lastChoice = nil
         return await withCheckedContinuation { continuation in
             controller.print(to: printer) { _, completed, error in
                 if let error {
                     continuation.resume(returning: .failed("\(name) didn't take the label: \(error.localizedDescription)"))
+                } else if !completed {
+                    continuation.resume(returning: .cancelled)
+                } else if let choice = Self.lastChoice, !choice.isLabel {
+                    continuation.resume(returning: .printedOnOtherPaper(printerName: name, paper: choice.name))
                 } else {
-                    continuation.resume(returning: completed ? .printed(printerName: name) : .cancelled)
+                    continuation.resume(returning: .printed(printerName: name))
                 }
             }
         }
@@ -78,6 +95,26 @@ final class LabelPrinter: NSObject, UIPrintInteractionControllerDelegate {
             } else {
                 controller.present(animated: true, completionHandler: completion)
             }
+        }
+    }
+
+    // MARK: The printer itself
+
+    /// One printer object for the saved address, kept between labels rather
+    /// than made afresh each time, so what it has said about its paper sticks.
+    private var cachedPrinter: UIPrinter?
+
+    private func savedPrinter(for url: URL) -> UIPrinter {
+        if let cachedPrinter, cachedPrinter.url == url { return cachedPrinter }
+        let printer = UIPrinter(url: url)
+        cachedPrinter = printer
+        return printer
+    }
+
+    /// Asks the printer whether it's there and what it has loaded.
+    private func contact(_ printer: UIPrinter) async -> Bool {
+        await withCheckedContinuation { continuation in
+            printer.contactPrinter { available in continuation.resume(returning: available) }
         }
     }
 
@@ -124,9 +161,28 @@ final class LabelPrinter: NSObject, UIPrintInteractionControllerDelegate {
                                                 choosePaper paperList: [UIPrintPaper]) -> UIPrintPaper {
         let sizes = paperList.map(\.paperSize)
         if let index = LabelPrinter.paperIndex(in: sizes, preferring: LabelPrinter.rememberedPaperSize) {
+            LabelPrinter.lastChoice = (true, LabelPrinter.describe(sizes[index]))
             return paperList[index]
         }
-        return UIPrintPaper.bestPaper(forPageSize: LabelPrinter.pageSize, withPapersFrom: paperList)
+        // No label size on offer this time. Print anyway, but say so
+        // afterwards rather than let an A4 label pass as a good one.
+        let fallback = UIPrintPaper.bestPaper(forPageSize: LabelPrinter.pageSize, withPapersFrom: paperList)
+        LabelPrinter.lastChoice = (false, LabelPrinter.describe(fallback.paperSize))
+        return fallback
+    }
+
+    /// Whether the last job's paper was the label, and what it was. Written
+    /// by the paper choice, read when the job completes.
+    nonisolated(unsafe) static var lastChoice: (isLabel: Bool, name: String)?
+
+    /// "A4", "Letter", "4 × 6 in", or the size in millimetres.
+    nonisolated static func describe(_ size: CGSize) -> String {
+        let (w, h) = (min(size.width, size.height), max(size.width, size.height))
+        func near(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(w - a) < 6 && abs(h - b) < 6 }
+        if near(595, 842) { return "A4" }
+        if near(612, 792) { return "Letter" }
+        if near(288, 432) { return "4 × 6 in" }
+        return "\(Int((w / 72 * 25.4).rounded())) × \(Int((h / 72 * 25.4).rounded())) mm"
     }
 
     /// The paper to use from a printer's list of paper sizes: the remembered
@@ -158,8 +214,10 @@ final class LabelPrinter: NSObject, UIPrintInteractionControllerDelegate {
         return size == .zero ? nil : size
     }
 
+    /// Only ever a label-sized paper: an A4 left selected in the sheet must
+    /// not become what every plain tap prints on.
     private static func rememberPaper(_ paper: UIPrintPaper?) {
-        guard let paper else { return }
+        guard let paper, paperIndex(in: [paper.paperSize], preferring: nil) != nil else { return }
         UserDefaults.standard.set(NSCoder.string(for: paper.paperSize), forKey: paperKey)
     }
 
@@ -222,6 +280,8 @@ extension LabelPrinter.Outcome {
     var message: String? {
         switch self {
         case .printed(let name): "Label sent to \(name)"
+        case .printedOnOtherPaper(let name, let paper):
+            "\(name) printed it on \(paper): it didn't offer the 4 × 6 label this time. Hold Print and choose the label."
         case .cancelled: nil
         case .failed(let message): message
         }
