@@ -7,6 +7,11 @@ struct ManualManifestDetailView: View {
     @ObservedObject var viewModel: ManualManifestDetailViewModel
     var backLabel = "Packing"
     @State private var boxToDelete: ManualManifestBox?
+    /// The box being looked at. Opened by setting this rather than by
+    /// pushing a value: this screen is itself often opened that way (from a
+    /// job page), and pushing a value on top made SwiftUI rebuild the stack
+    /// and open the consignment again instead of the box, round and round.
+    @State private var openBox: ManualManifestBox?
     @State private var showFinishConfirm = false
     @State private var showReopenConfirm = false
     @State private var showDeleteConfirm = false
@@ -49,7 +54,7 @@ struct ManualManifestDetailView: View {
                     if !viewModel.openBoxes.isEmpty {
                         PaperSectionHeader("Open boxes").paperListRow(top: PaperSpace.section)
                         ForEach(viewModel.openBoxes) { box in
-                            ListLinkRow(value: box) { ManualBoxRow(box: box) }
+                            boxButton(box)
                                 .paperListRow()
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button(role: .destructive) {
@@ -64,7 +69,7 @@ struct ManualManifestDetailView: View {
                     if !viewModel.closedBoxes.isEmpty {
                         PaperSectionHeader("Closed boxes").paperListRow(top: PaperSpace.section)
                         ForEach(viewModel.closedBoxes) { box in
-                            ListLinkRow(value: box) { ManualBoxRow(box: box) }
+                            boxButton(box)
                                 .paperListRow()
                         }
                     }
@@ -85,7 +90,7 @@ struct ManualManifestDetailView: View {
                 await viewModel.loadBoxes()
             }
         }
-        .navigationDestination(for: ManualManifestBox.self) { box in
+        .navigationDestination(item: $openBox) { box in
             ManualBoxScreen(
                 box: box,
                 manifestName: viewModel.manifest.manifestName,
@@ -150,6 +155,11 @@ struct ManualManifestDetailView: View {
         .task {
             await viewModel.loadBoxes()
         }
+    }
+
+    private func boxButton(_ box: ManualManifestBox) -> some View {
+        Button { openBox = box } label: { ManualBoxRow(box: box) }
+            .buttonStyle(.plain)
     }
 
     private var header: some View {
