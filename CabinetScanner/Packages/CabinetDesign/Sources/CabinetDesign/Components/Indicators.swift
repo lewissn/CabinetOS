@@ -312,7 +312,7 @@ public struct PaperRing: View {
 
 // MARK: - Marks
 
-/// Completion circle: open, done (red), muted done (grey) or active (red ring).
+/// Completion circle: open, done (ink), muted done (grey) or active (amber ring).
 public struct PaperCheck: View {
     public enum State: Sendable { case open, done, mutedDone, active }
     let state: State
@@ -329,8 +329,10 @@ public struct PaperCheck: View {
             case .open: Circle().strokeBorder(PaperColor.ink, lineWidth: 1.5)
             case .active: Circle().strokeBorder(PaperColor.accent, lineWidth: 1.5)
             case .done, .mutedDone:
-                Circle().fill(state == .done ? PaperColor.success : PaperColor.dot)
-                PaperIcon(.check, size: size * 0.5, lineWidth: 3, color: .white)
+                // Ink, with the check in the paper colour so it holds in dark
+                // mode too: done is quiet, not green.
+                Circle().fill(state == .done ? PaperColor.ink : PaperColor.dot)
+                PaperIcon(.check, size: size * 0.5, lineWidth: 3, color: PaperColor.paper)
             }
         }
         .frame(width: size, height: size)

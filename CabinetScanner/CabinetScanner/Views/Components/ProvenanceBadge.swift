@@ -20,7 +20,7 @@ struct ProvenanceBadge: View {
 
     private var tone: Tone { isStale ? .soon : source.tone }
 
-    private var dotColor: Color { tone == .soon ? PaperColor.warning : PaperColor.muted }
+    private var dotColor: Color { tone == .soon ? PaperColor.ember : PaperColor.muted }
     private var isHollow: Bool { tone != .soon && (source == .derived || source == .imported) }
 
     private var text: String {

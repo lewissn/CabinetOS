@@ -62,26 +62,48 @@ struct ReportingView: View {
 
     // MARK: - Consignments finished: the headline
 
+    /// A centred ring, as on Today: the share of the period's consignments
+    /// finished, with the count inside it.
     private var completion: some View {
         let c = vm.summary.completionRates
-        return VStack(alignment: .leading, spacing: PaperSpace.s) {
-            PaperLabel("Consignments finished \(periodWord)")
-            HStack(alignment: .firstTextBaseline, spacing: PaperSpace.s) {
-                Text(PaperFormat.int(c.completedConsignments)).paperType(.hero, numeric: true).foregroundStyle(PaperColor.ink)
-                if c.totalConsignments > 0 {
-                    Text("of \(PaperFormat.int(c.totalConsignments))").paperType(.subhead, numeric: true).foregroundStyle(PaperColor.secondary)
+        let fraction = c.totalConsignments > 0 ? Double(c.completedConsignments) / Double(c.totalConsignments) : 0
+        return VStack(spacing: PaperSpace.m) {
+            ZStack {
+                Circle().stroke(PaperColor.track, lineWidth: 3)
+                Circle()
+                    .trim(from: 0, to: max(0, min(1, fraction)))
+                    .stroke(PaperColor.accent, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .animation(.spring(response: 1.0, dampingFraction: 0.9), value: fraction)
+                VStack(spacing: 2) {
+                    Text("Finished \(periodWord)")
+                        .paperType(.footnote)
+                        .foregroundStyle(PaperColor.secondary)
+                    Text(PaperFormat.int(c.completedConsignments))
+                        .font(.brand(52, .light, relativeTo: .largeTitle))
+                        .tracking(-1.6)
+                        .monospacedDigit()
+                        .foregroundStyle(PaperColor.ink)
+                        .contentTransition(.numericText(value: Double(c.completedConsignments)))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                    Text(c.totalConsignments > 0 ? "of \(PaperFormat.int(c.totalConsignments)) consignments" : "consignments")
+                        .paperType(.caption, numeric: true)
+                        .foregroundStyle(PaperColor.tertiary)
                 }
+                .padding(.horizontal, 20)
+                .multilineTextAlignment(.center)
             }
-            if c.totalConsignments > 0 {
-                PaperBar(Double(c.completedConsignments) / Double(c.totalConsignments),
-                         color: c.completedConsignments >= c.totalConsignments ? PaperColor.success : PaperColor.accent,
-                         height: 4)
-                    .padding(.top, PaperSpace.xs)
-            }
+            .frame(width: 176, height: 176)
+            .padding(3)
+            .animation(.snappy, value: c.completedConsignments)
+
             Text("\(Format.count(c.openConsignments, "still open", "still open"))")
                 .paperType(.footnote, numeric: true)
                 .foregroundStyle(PaperColor.secondary)
         }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Volume

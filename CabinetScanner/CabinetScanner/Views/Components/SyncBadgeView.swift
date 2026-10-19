@@ -11,7 +11,7 @@ struct SyncBadgeView: View {
     var body: some View {
         HStack(spacing: PaperSpace.s) {
             if !isOnline {
-                PaperIcon(.offline, size: 18, color: PaperColor.warning)
+                PaperIcon(.offline, size: 18, color: PaperColor.ember)
                     .accessibilityLabel("Offline")
             }
             if pendingCount > 0 {

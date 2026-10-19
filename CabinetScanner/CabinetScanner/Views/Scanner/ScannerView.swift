@@ -46,7 +46,7 @@ struct ScannerView: View {
                 .ignoresSafeArea()
 
             // Dimmed camera with the scan window
-            ScanOverlayView(cornerColor: outcome.isResult ? outcome.tone.color : PaperColor.onInverse)
+            ScanOverlayView(cornerColor: outcome.isResult ? outcome.scanColor : PaperColor.onInverse)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
 

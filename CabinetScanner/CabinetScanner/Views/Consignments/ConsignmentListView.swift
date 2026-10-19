@@ -62,7 +62,7 @@ struct ConsignmentListView: View {
                      detail: "\(Format.count(viewModel.consignments.count, "consignment")) · \(complete) complete")
             if expected > 0 {
                 PaperBar(Double(packed) / Double(expected),
-                         color: packed >= expected ? PaperColor.success : PaperColor.accent, height: 4)
+                         color: packed >= expected ? PaperColor.ink : PaperColor.accent, height: 4)
             }
         }
     }

@@ -265,7 +265,7 @@ struct BoxDetailView: View {
                 cabinetBars
             } else if tracksPanels && viewModel.jobExpectedCount > 0 {
                 PaperBar(Double(viewModel.jobPackedCount) / Double(viewModel.jobExpectedCount),
-                         color: viewModel.jobPackedCount >= viewModel.jobExpectedCount ? PaperColor.success : PaperColor.accent,
+                         color: viewModel.jobPackedCount >= viewModel.jobExpectedCount ? PaperColor.ink : PaperColor.accent,
                          height: 4)
             }
         }
@@ -279,7 +279,7 @@ struct BoxDetailView: View {
                     Code(c.cabinetName, color: PaperColor.ink)
                         .frame(minWidth: 44, maxWidth: 96, alignment: .leading)
                     PaperBar(Double(c.packedPartCount) / Double(max(c.totalPartCount, 1)),
-                             color: c.isComplete ? PaperColor.success : PaperColor.accent, height: 4)
+                             color: c.isComplete ? PaperColor.ink : PaperColor.accent, height: 4)
                     Text("\(c.packedPartCount) of \(c.totalPartCount)")
                         .paperType(.footnote, numeric: true)
                         .foregroundStyle(PaperColor.secondary)

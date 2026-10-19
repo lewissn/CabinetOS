@@ -10,19 +10,24 @@ import UIKit
 
 // MARK: - Tone: Cabinet Lab's status meanings
 
+// The palette, since Today's redesign: amber is the brand and means in
+// progress; ember (brick red) means act soon; red means held up or wrong.
+// Done is quiet, a solid ink dot and plain words: finished things recede
+// rather than shout. Green has gone; the scanner keeps a bright amber for a
+// good scan, because ink would vanish against the camera.
 enum Tone {
-    case done       // green: done, packed
+    case done       // ink: done, packed, despatched
     case progress   // amber: ours and in progress, or paused
-    case soon       // orange: act soon
+    case soon       // ember: act soon
     case held       // red: held up, late, a wrong scan
     case customer   // blue: the customer's move
     case neutral
 
     var color: Color {
         switch self {
-        case .done: PaperColor.success
+        case .done: PaperColor.ink
         case .progress: PaperColor.accent
-        case .soon: PaperColor.warning
+        case .soon: PaperColor.ember
         case .held: PaperColor.danger
         case .customer: PaperColor.info
         case .neutral: PaperColor.dot
@@ -32,9 +37,8 @@ enum Tone {
     /// For text: amber never carries words, so progress text is body ink.
     var textColor: Color {
         switch self {
-        case .done: PaperColor.success
-        case .progress, .neutral: PaperColor.body
-        case .soon: PaperColor.warning
+        case .done, .progress, .neutral: PaperColor.body
+        case .soon: PaperColor.ember
         case .held: PaperColor.danger
         case .customer: PaperColor.info
         }
@@ -42,14 +46,19 @@ enum Tone {
 
     /// For an icon beside text: amber icons use the readable amber ink.
     var iconColor: Color {
-        self == .progress ? PaperColor.accentInk : (self == .neutral ? PaperColor.secondary : textColor)
+        switch self {
+        case .progress: PaperColor.accentInk
+        case .neutral: PaperColor.secondary
+        case .done: PaperColor.ink
+        default: textColor
+        }
     }
 
     var soft: Color {
         switch self {
-        case .done: PaperColor.successSoft
+        case .done: PaperColor.segment
         case .progress: PaperColor.accentSoft
-        case .soon: PaperColor.warningSoft
+        case .soon: PaperColor.emberSoft
         case .held: PaperColor.dangerSoft
         case .customer: PaperColor.infoSoft
         case .neutral: PaperColor.segment
