@@ -63,10 +63,13 @@ final class LabelPrinter: NSObject, UIPrintInteractionControllerDelegate {
         guard let pdf = Self.pdf(for: pages) else { return .failed("The label couldn't be drawn.") }
         let controller = makeController(pdf: pdf, jobName: jobName)
         return await withCheckedContinuation { continuation in
-            let completion: UIPrintInteractionController.CompletionHandler = { _, completed, error in
+            let completion: UIPrintInteractionController.CompletionHandler = { controller, completed, error in
                 if let error {
                     continuation.resume(returning: .failed(error.localizedDescription))
                 } else {
+                    // Whatever paper was picked here is the right one for
+                    // this printer: a plain tap uses it from now on.
+                    if completed { LabelPrinter.rememberPaper(controller.printPaper) }
                     continuation.resume(returning: completed ? .printed(printerName: "the printer") : .cancelled)
                 }
             }
@@ -104,14 +107,60 @@ final class LabelPrinter: NSObject, UIPrintInteractionControllerDelegate {
     func forgetPrinter() {
         UserDefaults.standard.removeObject(forKey: urlKey)
         UserDefaults.standard.removeObject(forKey: nameKey)
+        UserDefaults.standard.removeObject(forKey: Self.paperKey)
     }
 
     // MARK: Paper
 
     /// Pick the 4×6" label from whatever the printer offers.
+    ///
+    /// Not `UIPrintPaper.bestPaper`: that only accepts a paper whose
+    /// *printable* area holds the whole page, and a thermal printer's 4×6"
+    /// label has small margins, so it passed over the label and chose the
+    /// next paper that fitted — A4 — and every label printed enlarged across
+    /// two. This goes by the paper's size instead: the paper last chosen by
+    /// hand in the full print sheet, otherwise the one closest to 4×6".
     nonisolated func printInteractionController(_ controller: UIPrintInteractionController,
                                                 choosePaper paperList: [UIPrintPaper]) -> UIPrintPaper {
-        UIPrintPaper.bestPaper(forPageSize: LabelPrinter.pageSize, withPapersFrom: paperList)
+        let sizes = paperList.map(\.paperSize)
+        if let index = LabelPrinter.paperIndex(in: sizes, preferring: LabelPrinter.rememberedPaperSize) {
+            return paperList[index]
+        }
+        return UIPrintPaper.bestPaper(forPageSize: LabelPrinter.pageSize, withPapersFrom: paperList)
+    }
+
+    /// The paper to use from a printer's list of paper sizes: the remembered
+    /// one if the printer has it, otherwise the closest to 4×6" (either way
+    /// round, within half an inch). Nil when nothing is near.
+    nonisolated static func paperIndex(in sizes: [CGSize], preferring remembered: CGSize?) -> Int? {
+        func distance(_ a: CGSize, _ b: CGSize) -> CGFloat {
+            let straight = abs(a.width - b.width) + abs(a.height - b.height)
+            let turned = abs(a.width - b.height) + abs(a.height - b.width)
+            return min(straight, turned)
+        }
+        if let remembered,
+           let match = sizes.indices.min(by: { distance(sizes[$0], remembered) < distance(sizes[$1], remembered) }),
+           distance(sizes[match], remembered) <= 4 {
+            return match
+        }
+        guard let nearest = sizes.indices.min(by: { distance(sizes[$0], pageSize) < distance(sizes[$1], pageSize) }),
+              distance(sizes[nearest], pageSize) <= 36 else { return nil }
+        return nearest
+    }
+
+    /// The paper size chosen in the full print sheet, kept so a plain tap
+    /// prints on the same paper next time.
+    private static let paperKey = "labelPrinter.paperSize"
+
+    nonisolated static var rememberedPaperSize: CGSize? {
+        guard let stored = UserDefaults.standard.string(forKey: paperKey) else { return nil }
+        let size = NSCoder.cgSize(for: stored)
+        return size == .zero ? nil : size
+    }
+
+    private static func rememberPaper(_ paper: UIPrintPaper?) {
+        guard let paper else { return }
+        UserDefaults.standard.set(NSCoder.string(for: paper.paperSize), forKey: paperKey)
     }
 
     // MARK: Helpers
