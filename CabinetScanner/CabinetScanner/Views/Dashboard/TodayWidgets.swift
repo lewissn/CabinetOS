@@ -42,83 +42,72 @@ struct TodayFocus {
     }
 }
 
-// MARK: Focus ring
+// MARK: Focus bar
+//
+// The day that matters as a count and one bar, as in the CabinetOS concept:
+// green packed, amber being packed, the track still to pack, with the three
+// said in words underneath. The bar grows in from empty on first load.
 
-struct FocusRing: View {
+struct FocusBar: View {
     let focus: TodayFocus
     let isLoaded: Bool
     let revealed: Bool
-    var diameter: CGFloat = 196
+    var large = false
     var action: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var day: DayLoad? { focus.day }
-    private var fraction: Double {
-        guard let day, day.total > 0 else { return 0 }
-        return Double(day.ready) / Double(day.total)
-    }
-
-    /// Scales the type with the ring, so iPad and phone keep the same balance.
-    private var scale: CGFloat { diameter / 196 }
+    private var toPack: Int { (day?.total ?? 0) - (day?.ready ?? 0) - (day?.packing ?? 0) }
 
     var body: some View {
         Button(action: action) {
-            ZStack {
-                Circle().stroke(PaperColor.track, lineWidth: 3)
-                Circle()
-                    .trim(from: 0, to: max(0, min(1, revealed ? fraction : 0)))
-                    .stroke(PaperColor.success, style: StrokeStyle(lineWidth: 6, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .animation(reduceMotion ? nil : .spring(response: 1.1, dampingFraction: 0.9), value: revealed ? fraction : 0)
+            VStack(alignment: .leading, spacing: PaperSpace.l) {
+                Headline(value: isLoaded ? PaperFormat.int(day?.total ?? 0) : "–",
+                         unit: unit,
+                         style: large ? .heroXL : .hero)
+                    .contentTransition(.numericText(value: Double(day?.total ?? 0)))
 
-                VStack(spacing: 2 * scale) {
-                    Text(isLoaded ? focus.dayName : " ")
-                        .font(.brand(14 * scale, .regular, relativeTo: .subheadline))
-                        .foregroundStyle(PaperColor.secondary)
-                    Text(isLoaded ? PaperFormat.int(day?.total ?? 0) : "–")
-                        .font(.brand(60 * scale, .light, relativeTo: .largeTitle))
-                        .tracking(-1.8 * scale)
-                        .monospacedDigit()
-                        .foregroundStyle(PaperColor.ink)
-                        .contentTransition(.numericText(value: Double(day?.total ?? 0)))
-                        .minimumScaleFactor(0.6)
-                        .lineLimit(1)
-                    Text(packedLine)
-                        .font(.brand(13 * scale, .regular, relativeTo: .footnote))
-                        .monospacedDigit()
-                        .foregroundStyle(PaperColor.tertiary)
-                        .contentTransition(.numericText(value: Double(day?.ready ?? 0)))
+                bar
+
+                HStack(spacing: PaperSpace.l) {
+                    if isLoaded, let day {
+                        StatusText("\(PaperFormat.int(day.ready)) packed", tone: .done)
+                        StatusText("\(PaperFormat.int(day.packing)) packing", tone: .progress)
+                        StatusText("\(PaperFormat.int(toPack)) to pack", tone: .neutral)
+                    } else {
+                        StatusText(isLoaded ? "Nothing due out in the next five working days" : " ", tone: .neutral)
+                    }
                 }
-                .padding(.horizontal, 22 * scale)
-                .multilineTextAlignment(.center)
+                .contentTransition(.numericText())
             }
-            .frame(width: diameter, height: diameter)
-            .padding(3)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(day == nil)
         .animation(reduceMotion ? nil : .snappy(duration: 0.5), value: day?.total)
-        .animation(reduceMotion ? nil : .snappy(duration: 0.5), value: day?.ready)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText)
     }
 
-    /// "16 of 28 packed", or the date when the ring is about a later day.
-    private var packedLine: String {
-        guard isLoaded else { return " " }
-        guard let day else { return "nothing due out" }
-        let packed = "\(PaperFormat.int(day.ready)) packed"
-        return focus.isToday || focus.isTomorrow
-            ? packed
-            : "\(TodayText.dayMonth.string(from: day.date)) · \(packed)"
+    /// "jobs due out tomorrow", "jobs due out on Monday", "jobs due out on Thursday 22 Oct"
+    private var unit: String {
+        guard isLoaded, let day else { return "jobs due out" }
+        let jobs = day.total == 1 ? "job due out" : "jobs due out"
+        if focus.isToday { return "\(jobs) today" }
+        if focus.isTomorrow { return focus.dayName == "Tomorrow" ? "\(jobs) tomorrow" : "\(jobs) on \(focus.dayName)" }
+        return "\(jobs) on \(focus.dayName) \(TodayText.dayMonth.string(from: day.date))"
     }
 
-    private var accessibilityText: String {
-        guard let day else { return "Nothing due out in the next five working days" }
-        return "\(focus.dayName): \(Format.count(day.total, "job")) due out, \(day.ready) packed"
+    private var bar: some View {
+        let total = Double(max(day?.total ?? 0, 1))
+        let grow = revealed ? 1.0 : 0.0
+        return PaperCompositionBar([
+            PaperSegment(id: "packed", fraction: Double(day?.ready ?? 0) / total * grow, color: PaperColor.success),
+            PaperSegment(id: "packing", fraction: Double(day?.packing ?? 0) / total * grow, color: PaperColor.accent),
+        ], height: large ? 14 : 10, remainder: PaperColor.track)
+        .animation(reduceMotion ? nil : .spring(response: 0.9, dampingFraction: 0.88), value: grow)
+        .animation(reduceMotion ? nil : .snappy, value: day?.ready)
     }
 }
 

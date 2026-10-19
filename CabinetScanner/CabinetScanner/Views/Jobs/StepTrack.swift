@@ -44,3 +44,41 @@ struct StepTrack: View {
         return "\(done) of \(steps.count) steps done"
     }
 }
+
+// MARK: - On a board row
+
+/// The same track, small, for a row on the Jobs board: done green, the
+/// current step amber (an outline when it's paused), the rest grey. The
+/// current step is the first one not completed, as on the job page.
+struct BoardStepTrack: View {
+    let steps: [BoardStep]
+
+    private var currentIndex: Int? { steps.firstIndex { !$0.isComplete } }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(Array(steps.enumerated()), id: \.offset) { i, step in
+                let shape = RoundedRectangle(cornerRadius: 1.5)
+                if step.isComplete {
+                    shape.fill(PaperColor.success)
+                } else if i == currentIndex {
+                    if step.isHalted {
+                        shape.strokeBorder(PaperColor.accent, lineWidth: 1.2)
+                    } else {
+                        shape.fill(PaperColor.accent)
+                    }
+                } else {
+                    shape.fill(PaperColor.track)
+                }
+            }
+        }
+        .frame(height: 5)
+        .accessibilityHidden(true)
+    }
+
+    /// "Pack & Wrap · 7 of 8", or "All 8 done".
+    var caption: String {
+        guard let currentIndex else { return "All \(steps.count) done" }
+        return "\(steps[currentIndex].name) · \(currentIndex + 1) of \(steps.count)"
+    }
+}
