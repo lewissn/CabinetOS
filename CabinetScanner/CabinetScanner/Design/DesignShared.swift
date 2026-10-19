@@ -500,7 +500,12 @@ extension View {
 @MainActor
 final class Toaster: ObservableObject {
     @Published var message: String?
-    func show(_ text: String) { message = text }
+    /// The message confirms a box sealed: the toast draws its seal.
+    @Published var sealed = false
+    func show(_ text: String, sealed: Bool = false) {
+        self.sealed = sealed
+        message = text
+    }
 }
 
 // MARK: - Formatting

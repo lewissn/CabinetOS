@@ -145,7 +145,8 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
                     payload: payload,
                     symbology: sym,
                     centerPosition: center,
-                    timestamp: now
+                    timestamp: now,
+                    boundingBox: bounds
                 ))
             }
 

@@ -310,6 +310,7 @@ struct BoxRow: View {
                     Text(detail).paperType(.footnote, numeric: true).foregroundStyle(PaperColor.secondary).lineLimit(1)
                 }
                 Spacer(minLength: PaperSpace.m)
+                FreshSeal(boxId: box.id)
                 VStack(alignment: .trailing, spacing: 3) {
                     StatusText(box.isClosed ? "Closed" : "Open", tone: box.isClosed ? .done : .progress)
                     if box.isClosed, let by = box.wrappedBy, !by.isEmpty {

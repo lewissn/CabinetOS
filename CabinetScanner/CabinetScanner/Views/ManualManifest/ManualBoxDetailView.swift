@@ -6,6 +6,7 @@ import SwiftUI
 struct ManualBoxDetailView: View {
     @ObservedObject var viewModel: ManualBoxDetailViewModel
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject private var toaster: Toaster
     @Environment(\.dismiss) private var dismiss
 
     @State private var showScanner = false
@@ -156,11 +157,15 @@ struct ManualBoxDetailView: View {
                 Task {
                     let closed = await viewModel.closeBoxSimple()
                     if closed {
+                        // The toast outlives this screen, so the seal is
+                        // still drawing as the box arrives in Closed.
+                        let number = box.boxNumber
+                        toaster.show("Box \(number) closed", sealed: true)
                         if printOnClose {
                             let outcome = await LabelPrinter.shared.print([AnyView(label)], jobName: labelJobName)
-                            if let message = outcome.message { viewModel.toastMessage = message }
+                            if let message = outcome.message { toaster.show("Box \(number) closed · \(message.lowercasedFirst)", sealed: true) }
                         }
-                        try? await Task.sleep(nanoseconds: 1_000_000_000)
+                        try? await Task.sleep(for: .seconds(0.35))
                         dismiss()
                     }
                 }

@@ -172,7 +172,8 @@ final class BoxDetailViewModel: ObservableObject {
                 wrappedByDevice: deviceId
             )
             self.box = closed
-            HapticService.success()
+            HapticService.seal()
+            SealCenter.shared.mark(closed.id)
             return WrapStatsService.shared.recordWrap(boxType: boxType)
         } catch {
             errorMessage = error.localizedDescription

@@ -300,6 +300,7 @@ struct ManualBoxRow: View {
                     Text(detail).paperType(.footnote, numeric: true).foregroundStyle(PaperColor.secondary).lineLimit(1)
                 }
                 Spacer(minLength: PaperSpace.m)
+                FreshSeal(boxId: box.id)
                 StatusText(box.isClosed ? "Closed" : "Open", tone: box.isClosed ? .done : .progress)
                 PaperIcon(.chevronRight, size: 14, color: PaperColor.faint)
             }

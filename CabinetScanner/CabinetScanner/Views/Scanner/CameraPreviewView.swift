@@ -4,10 +4,13 @@ import AVFoundation
 /// UIViewRepresentable wrapper for AVCaptureVideoPreviewLayer
 struct CameraPreviewView: UIViewRepresentable {
     let session: AVCaptureSession
+    /// Given the preview layer, so a found code can be located on screen.
+    var geometry: PreviewGeometry? = nil
 
     func makeUIView(context: Context) -> CameraPreviewUIView {
         let view = CameraPreviewUIView()
         view.session = session
+        geometry?.layer = view.layer as? AVCaptureVideoPreviewLayer
         return view
     }
 

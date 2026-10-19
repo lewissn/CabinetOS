@@ -1,4 +1,6 @@
+import CabinetDesign
 import Foundation
+import SwiftUI
 
 @MainActor
 final class ManualManifestDetailViewModel: ObservableObject {
@@ -28,7 +30,9 @@ final class ManualManifestDetailViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         do {
-            boxes = try await service.fetchBoxes(manifestId: manifest.id)
+            let fresh = try await service.fetchBoxes(manifestId: manifest.id)
+            // Coming back from a box just closed: it glides from Open to Closed.
+            if boxes.isEmpty { boxes = fresh } else { withAnimation(PaperMotion.spring) { boxes = fresh } }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -103,9 +107,14 @@ final class ManualManifestDetailViewModel: ObservableObject {
                 try await service.finishManifest(id: manifest.id)
             }
             manifest = withStatus(.finished)
-            toastMessage = "Manifest finished"
-            HapticService.success()
-            showSummary = true
+            // The moment plays its own haptics; the summary follows it.
+            let outcome = finishOutcome
+            MomentCenter.shared.play(FinishMoment(
+                name: manifest.manifestName,
+                boxCount: boxes.count,
+                movedJobOn: outcome?.stepsCompleted == true && outcome?.alreadyCompleted != true,
+                onDone: { [weak self] in self?.showSummary = true }
+            ))
         } catch {
             errorMessage = (error as? JobIndexError)?.errorDescription ?? error.localizedDescription
             HapticService.error()

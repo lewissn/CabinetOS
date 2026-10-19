@@ -21,12 +21,16 @@ struct ToastView: View {
     /// The check suits a confirmation; pass nil for a toast that reports
     /// something that didn't happen ("Nothing was added").
     var glyph: PaperGlyph? = .check
+    /// Draw a seal in place of the glyph: a box just closed.
+    var sealed = false
 
     var body: some View {
         Group {
             if let text = message {
                 HStack(spacing: PaperSpace.s) {
-                    if let glyph {
+                    if sealed {
+                        SealMark(size: 20, colour: PaperColor.accent, checkColour: PaperColor.onInverse)
+                    } else if let glyph {
                         PaperIcon(glyph, size: 16, lineWidth: 2.2, color: PaperColor.onInverse)
                     }
                     Text(text)
@@ -35,6 +39,7 @@ struct ToastView: View {
                         .multilineTextAlignment(.leading)
                         .lineLimit(2)
                 }
+                .id(text)
                 .padding(.horizontal, PaperSpace.xl)
                 .padding(.vertical, PaperSpace.s)
                 .frame(minHeight: 48)
