@@ -48,7 +48,7 @@ struct FocusRing: View {
     let focus: TodayFocus
     let isLoaded: Bool
     let revealed: Bool
-    var diameter: CGFloat = 128
+    var diameter: CGFloat = 196
     var action: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -59,68 +59,66 @@ struct FocusRing: View {
         return Double(day.ready) / Double(day.total)
     }
 
+    /// Scales the type with the ring, so iPad and phone keep the same balance.
+    private var scale: CGFloat { diameter / 196 }
+
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .center, spacing: PaperSpace.xxl) {
-                ring
-                    .frame(width: diameter, height: diameter)
-                VStack(alignment: .leading, spacing: PaperSpace.xs) {
+            ZStack {
+                Circle().stroke(PaperColor.track, lineWidth: 3)
+                Circle()
+                    .trim(from: 0, to: max(0, min(1, revealed ? fraction : 0)))
+                    .stroke(PaperColor.accent, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .animation(reduceMotion ? nil : .spring(response: 1.1, dampingFraction: 0.9), value: revealed ? fraction : 0)
+
+                VStack(spacing: 2 * scale) {
                     Text(isLoaded ? focus.dayName : " ")
-                        .paperType(.subhead)
+                        .font(.brand(14 * scale, .regular, relativeTo: .subheadline))
                         .foregroundStyle(PaperColor.secondary)
                     Text(isLoaded ? PaperFormat.int(day?.total ?? 0) : "–")
-                        .font(.brand(diameter > 150 ? 68 : 52, .light, relativeTo: .largeTitle))
-                        .tracking(-1.6)
+                        .font(.brand(60 * scale, .light, relativeTo: .largeTitle))
+                        .tracking(-1.8 * scale)
                         .monospacedDigit()
                         .foregroundStyle(PaperColor.ink)
                         .contentTransition(.numericText(value: Double(day?.total ?? 0)))
-                    Text(subtitle)
-                        .paperType(.footnote, numeric: true)
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
+                    Text(packedLine)
+                        .font(.brand(13 * scale, .regular, relativeTo: .footnote))
+                        .monospacedDigit()
                         .foregroundStyle(PaperColor.tertiary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .contentTransition(.numericText(value: Double(day?.ready ?? 0)))
                 }
-                Spacer(minLength: 0)
+                .padding(.horizontal, 22 * scale)
+                .multilineTextAlignment(.center)
             }
+            .frame(width: diameter, height: diameter)
+            .padding(3)
+            .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(day == nil)
         .animation(reduceMotion ? nil : .snappy(duration: 0.5), value: day?.total)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.5), value: day?.ready)
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityText)
     }
 
-    private var subtitle: String {
+    /// "16 of 28 packed", or the date when the ring is about a later day.
+    private var packedLine: String {
         guard isLoaded else { return " " }
-        guard let day else { return "Nothing due out" }
-        let due = day.total == 1 ? "job due out" : "jobs due out"
+        guard let day else { return "nothing due out" }
+        let packed = "\(PaperFormat.int(day.ready)) packed"
         return focus.isToday || focus.isTomorrow
-            ? due
-            : "\(due) · \(TodayText.dayMonth.string(from: day.date))"
+            ? packed
+            : "\(TodayText.dayMonth.string(from: day.date)) · \(packed)"
     }
 
-    private var ring: some View {
-        let shown = revealed ? fraction : 0
-        return ZStack {
-            Circle().stroke(PaperColor.track, lineWidth: 3)
-            Circle()
-                .trim(from: 0, to: max(0, min(1, shown)))
-                .stroke(PaperColor.accent, style: StrokeStyle(lineWidth: 6, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .animation(reduceMotion ? nil : .spring(response: 1.1, dampingFraction: 0.9), value: shown)
-            VStack(spacing: 0) {
-                Text(isLoaded ? PaperFormat.int(day?.ready ?? 0) : "–")
-                    .font(.brand(diameter > 150 ? 36 : 28, .regular, relativeTo: .title))
-                    .monospacedDigit()
-                    .foregroundStyle(PaperColor.ink)
-                    .contentTransition(.numericText(value: Double(day?.ready ?? 0)))
-                Text("packed")
-                    .paperType(.caption)
-                    .foregroundStyle(PaperColor.tertiary)
-            }
-            .animation(reduceMotion ? nil : .snappy(duration: 0.5), value: day?.ready)
-        }
-        .padding(3)
+    private var accessibilityText: String {
+        guard let day else { return "Nothing due out in the next five working days" }
+        return "\(focus.dayName): \(Format.count(day.total, "job")) due out, \(day.ready) packed"
     }
 }
 
@@ -186,7 +184,7 @@ struct QuietFigures: View {
 
         var body: some View {
             Button(action: action) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .center, spacing: 4) {
                     HStack(spacing: 6) {
                         if let marker {
                             Circle().fill(marker).frame(width: 6, height: 6)
@@ -207,7 +205,8 @@ struct QuietFigures: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, alignment: .center)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

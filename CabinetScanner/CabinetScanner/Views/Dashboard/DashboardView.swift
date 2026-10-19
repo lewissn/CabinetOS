@@ -21,6 +21,7 @@ struct DashboardView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showingNotifications = false
     @State private var showingVan = false
     /// Once the dispatch figures have loaded, a refresh keeps showing them
@@ -70,10 +71,16 @@ struct DashboardView: View {
                         .scrollDismissesKeyboard(.immediately)
                         .transition(.opacity.combined(with: .offset(y: 10)))
                     } else {
-                        ViewThatFits(in: .vertical) {
-                            dashboard.screen()
-                            ScrollView { dashboard.screen() }
-                                .refreshable { await refreshAll() }
+                        GeometryReader { geo in
+                            let height = geo.size.height
+                            if let ring = ringFitting(height) {
+                                dashboard(ring: ring)
+                                    .screen()
+                                    .frame(height: height, alignment: .top)
+                            } else {
+                                ScrollView { dashboard(ring: 140).screen() }
+                                    .refreshable { await refreshAll() }
+                            }
                         }
                         // The keyboard rises over the dashboard rather than
                         // squeezing it into its scrolling form.
@@ -181,30 +188,44 @@ struct DashboardView: View {
 
     /// Spacers with a floor and a ceiling: on a tall screen the blocks breathe,
     /// on a short one they close up before anything has to scroll.
+    ///
+    /// Not a Spacer: a Spacer's ideal height ignores its minimum, so the
+    /// fit-or-scroll check counted the gaps as nothing and chose the fixed
+    /// layout for a screen it then overflowed.
     private func gap(_ minimum: CGFloat, _ maximum: CGFloat) -> some View {
-        Spacer(minLength: minimum).frame(maxHeight: maximum * (isWide ? 1.6 : 1))
+        Color.clear.frame(minHeight: minimum, maxHeight: maximum * (isWide ? 1.6 : 1))
     }
 
     /// An iPad, where the same layout is drawn larger rather than left
     /// clustered at the top of a tall screen.
     private var isWide: Bool { sizeClass == .regular }
 
-    private var dashboard: some View {
+    /// The ring's size for the height there is, or nil when the page has to
+    /// scroll: a very short screen, or text set large enough that the fixed
+    /// layout wouldn't hold. Everything but the ring needs about 410 pt; the
+    /// ring takes what's left, within limits.
+    private func ringFitting(_ height: CGFloat) -> CGFloat? {
+        guard dynamicTypeSize <= .xLarge else { return nil }
+        let ring = min(height - 410, isWide ? 260 : 176)
+        return ring >= 128 ? ring : nil
+    }
+
+    private func dashboard(ring: CGFloat) -> some View {
         let focus = focus
         return VStack(alignment: .leading, spacing: 0) {
-            gap(PaperSpace.xxl, 56)
+            gap(PaperSpace.l, 56)
 
             if case .error(let message) = vm.state, !hasLoaded {
                 PaperEmptyState("Today's despatch didn't load", message: message, actionTitle: "Try again") {
                     Task { await refreshAll() }
                 }
             } else {
-                FocusRing(focus: focus, isLoaded: showsDispatch, revealed: revealed, diameter: isWide ? 188 : 128) {
+                FocusRing(focus: focus, isLoaded: showsDispatch, revealed: revealed, diameter: ring) {
                     open(focus)
                 }
             }
 
-            gap(PaperSpace.xxl, 52)
+            gap(PaperSpace.l, 52)
 
             QuietFigures(
                 intelligence: vm.intelligence,
@@ -216,7 +237,7 @@ struct DashboardView: View {
                 onWeek: switchToReports
             )
 
-            gap(PaperSpace.xxl, 52)
+            gap(PaperSpace.l, 52)
 
             HStack(alignment: .firstTextBaseline) {
                 Text("Next \(DashboardService.workingDaysShown) working days")
@@ -236,10 +257,13 @@ struct DashboardView: View {
                        barWidth: isWide ? 22 : 14) { vm.selectedTile = .day($0) }
                 .frame(minHeight: 112, maxHeight: isWide ? 340 : 190)
                 .padding(.top, PaperSpace.m)
+                // On iPad, spare height goes to the bars before the gap under
+                // them; on a phone the gaps share it, so the ring can breathe.
+                .layoutPriority(isWide ? 1 : 0)
 
             // Whatever height is left goes here, so the news and the footer
             // sit at the foot of the screen.
-            Spacer(minLength: PaperSpace.m)
+            gap(PaperSpace.m, .infinity)
 
             TodayAlertLine { showingNotifications = true }
 
