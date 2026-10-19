@@ -10,13 +10,10 @@ import UIKit
 
 // MARK: - Tone: Cabinet Lab's status meanings
 
-// The palette, since Today's redesign: amber is the brand and means in
-// progress; ember (brick red) means act soon; red means held up or wrong.
-// Done is quiet, a solid ink dot and plain words: finished things recede
-// rather than shout. Green has gone; the scanner keeps a bright amber for a
-// good scan, because ink would vanish against the camera.
+// The palette: green means done; amber is the brand and means in progress;
+// ember (brick red) means act soon; red means held up or wrong.
 enum Tone {
-    case done       // ink: done, packed, despatched
+    case done       // green: done, packed, despatched
     case progress   // amber: ours and in progress, or paused
     case soon       // ember: act soon
     case held       // red: held up, late, a wrong scan
@@ -25,7 +22,7 @@ enum Tone {
 
     var color: Color {
         switch self {
-        case .done: PaperColor.ink
+        case .done: PaperColor.success
         case .progress: PaperColor.accent
         case .soon: PaperColor.ember
         case .held: PaperColor.danger
@@ -37,7 +34,8 @@ enum Tone {
     /// For text: amber never carries words, so progress text is body ink.
     var textColor: Color {
         switch self {
-        case .done, .progress, .neutral: PaperColor.body
+        case .done: PaperColor.success
+        case .progress, .neutral: PaperColor.body
         case .soon: PaperColor.ember
         case .held: PaperColor.danger
         case .customer: PaperColor.info
@@ -49,14 +47,13 @@ enum Tone {
         switch self {
         case .progress: PaperColor.accentInk
         case .neutral: PaperColor.secondary
-        case .done: PaperColor.ink
         default: textColor
         }
     }
 
     var soft: Color {
         switch self {
-        case .done: PaperColor.segment
+        case .done: PaperColor.successSoft
         case .progress: PaperColor.accentSoft
         case .soon: PaperColor.emberSoft
         case .held: PaperColor.dangerSoft

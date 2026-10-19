@@ -24,7 +24,7 @@ struct StepTrack: View {
         if step.isSkipped {
             PaperHatch(color: PaperColor.border, spacing: 4, lineWidth: 1.5).clipShape(shape)
         } else if step.isComplete {
-            shape.fill(PaperColor.ink)
+            shape.fill(PaperColor.success)
         } else if isCurrent {
             if step.isHalted {
                 shape.strokeBorder(PaperColor.accent, lineWidth: 1.5)

@@ -21,10 +21,6 @@ enum ScanOutcome: Equatable {
         }
     }
 
-    /// The corners' colour for a result. A good scan is bright amber, not the
-    /// quiet ink of "done" elsewhere: it has to read against the camera.
-    var scanColor: Color { self.tone == .done ? PaperColor.accent : self.tone.color }
-
     /// The corners and band only take a colour for a result.
     var isResult: Bool {
         switch self {
@@ -100,8 +96,7 @@ struct ResultBand: View {
         .padding(.horizontal, PaperSpace.l)
         .frame(height: height)
         .frame(maxWidth: .infinity)
-        .background(outcome.isResult ? (outcome.tone == .done ? PaperColor.accentSoft : outcome.tone.soft) : PaperColor.paper,
-                    in: RoundedRectangle(cornerRadius: 12))
+        .background(outcome.isResult ? outcome.tone.soft : PaperColor.paper, in: RoundedRectangle(cornerRadius: 12))
         .overlay {
             if !outcome.isResult { RoundedRectangle(cornerRadius: 12).strokeBorder(PaperColor.hairline, lineWidth: 1) }
         }
@@ -114,7 +109,7 @@ struct ResultBand: View {
         switch outcome {
         case .ready: PaperIcon(.scan, size: 26, color: PaperColor.secondary)
         case .checking: ProgressView().tint(PaperColor.secondary)
-        case .added: PaperIcon(.check, size: 26, lineWidth: 2.4, color: PaperColor.accentInk)
+        case .added: PaperIcon(.check, size: 26, lineWidth: 2.4, color: PaperColor.success)
         case .problem(_, _, let tone):
             if tone == .held {
                 PaperIcon(.close, size: 24, lineWidth: 2.4, color: PaperColor.danger)

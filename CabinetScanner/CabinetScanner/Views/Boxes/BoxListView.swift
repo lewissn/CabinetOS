@@ -191,7 +191,7 @@ struct BoxListView: View {
             )
             if expected > 0 && !failedEmpty {
                 PaperBar(Double(panelsInBoxes) / Double(expected),
-                         color: panelsInBoxes >= expected ? PaperColor.ink : PaperColor.accent, height: 4)
+                         color: panelsInBoxes >= expected ? PaperColor.success : PaperColor.accent, height: 4)
             }
         }
     }
