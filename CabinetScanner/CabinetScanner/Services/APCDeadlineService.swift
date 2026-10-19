@@ -14,7 +14,7 @@ final class APCDeadlineService {
             + "?select=id,due_raw,customer,sales_order,shipping_method"
             + "&shipping_method=ilike.*apc*"
             + "&due_raw=eq.\(todayString)"
-            + "&workflow_group=in.(Post-Production,Production)"
+            + "&workflow_group=in.(\(DashboardService.committedGroups))"
             + "&order=customer.asc"
 
         guard let url = URL(string: urlString) else {
