@@ -53,6 +53,18 @@ final class DashboardViewModel: ObservableObject {
     @Published var selectedTile: TileDetail?
 
     private let service = DashboardService()
+    private let cache = SameDayCache<DispatchIntelligence>(name: "dispatch")
+    /// When the figures on screen were fetched, if they came from the device.
+    private(set) var cachedAt: Date?
+
+    init() {
+        // Open on the last figures from today, then refresh over them.
+        if let cached = cache.load() {
+            intelligence = cached.value
+            cachedAt = cached.savedAt
+            state = .loaded
+        }
+    }
 
     var greeting: String {
         let hour = Calendar.london.component(.hour, from: Date())
@@ -75,6 +87,7 @@ final class DashboardViewModel: ObservableObject {
         do {
             intelligence = try await service.fetchIntelligence()
             state = .loaded
+            cache.save(intelligence)
         } catch {
             state = .error(error.localizedDescription)
         }

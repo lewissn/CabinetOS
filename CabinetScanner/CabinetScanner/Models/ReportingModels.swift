@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Reporting Period
 
-enum ReportingPeriod: String, CaseIterable, Identifiable, Decodable {
+enum ReportingPeriod: String, CaseIterable, Identifiable, Codable {
     case today = "Today"
     case thisWeek = "This Week"
     case thisMonth = "This Month"
@@ -59,13 +59,13 @@ enum ReportingPeriod: String, CaseIterable, Identifiable, Decodable {
 
 // MARK: - Stat Groups
 
-struct PackingSpeedStats: Decodable {
+struct PackingSpeedStats: Codable {
     let averageCompletionMinutes: Double
     let itemsScannedInPeriod: Int
     let averageItemsPerDay: Double
 }
 
-struct CompletionRateStats: Decodable {
+struct CompletionRateStats: Codable {
     let completedConsignments: Int
     let openConsignments: Int
     let totalConsignments: Int
@@ -74,7 +74,7 @@ struct CompletionRateStats: Decodable {
     let averageBoxesPerConsignment: Double
 }
 
-struct VolumeStats: Decodable {
+struct VolumeStats: Codable {
     let totalConsignments: Int
     let totalBoxes: Int
     let totalItemsScanned: Int
@@ -107,7 +107,7 @@ enum WrapScoring {
 
 /// Quality-first wrapping stats. Points are only awarded for a box that was
 /// never reworked, so rushing a box closed never improves a score.
-struct WrapLeagueStats: Decodable {
+struct WrapLeagueStats: Codable {
     let wrappedBoxes: Int
     let cleanWrappedBoxes: Int
     let cleanWrapPercentage: Double
@@ -123,7 +123,7 @@ struct WrapLeagueStats: Decodable {
 
 /// Keyed by device rather than typed name — the operator name is free text, so
 /// "Dave" and "dave " would otherwise split into two competing rows.
-struct WrapperStanding: Identifiable, Decodable {
+struct WrapperStanding: Identifiable, Codable {
     let deviceId: String
     let name: String
     let wrappedBoxes: Int
@@ -136,7 +136,7 @@ struct WrapperStanding: Identifiable, Decodable {
 
 // MARK: - Combined Summary
 
-struct ReportingSummary: Decodable {
+struct ReportingSummary: Codable {
     let period: ReportingPeriod
     let packingSpeed: PackingSpeedStats
     let completionRates: CompletionRateStats

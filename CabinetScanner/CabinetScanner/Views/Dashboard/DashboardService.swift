@@ -8,7 +8,7 @@ import Foundation
 // MARK: - Models
 // ============================================================
 
-struct DispatchIntelligence {
+struct DispatchIntelligence: Codable {
     let dueToday: Int
     let dueTomorrow: Int
     let courierGroups: [CourierGroup]
@@ -25,7 +25,7 @@ struct DispatchIntelligence {
 }
 
 /// Everything due out on one day.
-struct DayLoad: Identifiable {
+struct DayLoad: Identifiable, Codable {
     var id: Date { date }
     let date: Date
     let jobs: [DispatchJob]
@@ -36,7 +36,7 @@ struct DayLoad: Identifiable {
     var packing: Int { jobs.filter { $0.stage == .packing }.count }
 }
 
-struct CourierGroup: Identifiable {
+struct CourierGroup: Identifiable, Codable {
     var id: String { shippingMethod }
     let shippingMethod: String
     let dueToday: Int
@@ -47,7 +47,7 @@ struct CourierGroup: Identifiable {
     var hasJobs: Bool { dueToday > 0 || dueTomorrow > 0 }
 }
 
-struct DispatchJob: Identifiable {
+struct DispatchJob: Identifiable, Codable {
     let id: String
     let customer: String
     let salesOrder: String
@@ -64,7 +64,7 @@ struct DispatchJob: Identifiable {
 /// completed, so without this a job despatched on Tuesday still counted as
 /// due out on Friday. Every job due in the week of 12 Oct 2026 that the old
 /// query returned was already "Despatch: completed".
-enum DispatchStage: Int, Comparable {
+enum DispatchStage: Int, Comparable, Codable {
     case toPack, packing, packed, despatched
 
     init(step: String?, status: String?) {
@@ -432,4 +432,45 @@ enum DashboardError: LocalizedError {
 
 private extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
+// MARK: - Today's last figures, kept on the device
+//
+// So Today opens showing the figures from the last time it loaded rather
+// than dashes, while fresh ones come in. Only ever the same London day:
+// yesterday's "due today" is not today's.
+
+struct SameDayCache<Value: Codable> {
+    let name: String
+
+    private struct Stored: Codable {
+        let day: String
+        let savedAt: Date
+        let value: Value
+    }
+
+    private var url: URL? {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("today-\(name).json")
+    }
+
+    private static var today: String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "Europe/London")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: .now)
+    }
+
+    func load() -> (value: Value, savedAt: Date)? {
+        guard let url, let data = try? Data(contentsOf: url),
+              let stored = try? JSONDecoder().decode(Stored.self, from: data),
+              stored.day == Self.today else { return nil }
+        return (stored.value, stored.savedAt)
+    }
+
+    func save(_ value: Value) {
+        guard let url, let data = try? JSONEncoder().encode(Stored(day: Self.today, savedAt: .now, value: value)) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
 }

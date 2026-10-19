@@ -110,7 +110,16 @@ struct DashboardView: View {
                     onCancel: { scanningLabel = false }
                 )
             }
-            .task { await refreshAll() }
+            .task {
+                // Figures kept from earlier today show at once, ring drawn,
+                // while fresh ones load over them.
+                if vm.state == .loaded, !hasLoaded {
+                    hasLoaded = true
+                    revealed = true
+                    updatedAt = vm.cachedAt
+                }
+                await refreshAll()
+            }
             // Every tab is alive from launch: coming back to Today is when it
             // reloads, as is coming back to the app or a new day starting.
             .onTabReturn { await refreshAll() }
@@ -318,10 +327,15 @@ final class WeekFigures: ObservableObject {
     @Published private(set) var summary: ReportingSummary?
     @Published private(set) var errorMessage: String?
     private let service = ReportingService()
+    private let cache = SameDayCache<ReportingSummary>(name: "week")
+
+    init() { summary = cache.load()?.value }
 
     func load(deviceId: String) async {
         do {
-            summary = try await service.fetchReport(for: .thisWeek, deviceId: deviceId)
+            let fresh = try await service.fetchReport(for: .thisWeek, deviceId: deviceId)
+            summary = fresh
+            cache.save(fresh)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
