@@ -23,7 +23,7 @@ enum TileDetail: Identifiable {
     var title: String {
         switch self {
         case .dueToday:              return "Due Today"
-        case .dueTomorrow:           return "Due Tomorrow"
+        case .dueTomorrow:           return WorkingDay.dueLabel()
         case .courierGroup(let g):   return g.shippingMethod
         case .day:                   return "Due"
         }
@@ -100,7 +100,7 @@ final class DashboardViewModel: ObservableObject {
                 result.append(GroupedSection(title: "Due Today", jobs: group.todayJobs.sorted { ($0.stage, $0.customer) < ($1.stage, $1.customer) }))
             }
             if !group.tomorrowJobs.isEmpty {
-                result.append(GroupedSection(title: "Due Tomorrow", jobs: group.tomorrowJobs.sorted { ($0.stage, $0.customer) < ($1.stage, $1.customer) }))
+                result.append(GroupedSection(title: WorkingDay.dueLabel(), jobs: group.tomorrowJobs.sorted { ($0.stage, $0.customer) < ($1.stage, $1.customer) }))
             }
             return result
 

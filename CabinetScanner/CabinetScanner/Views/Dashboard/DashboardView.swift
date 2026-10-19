@@ -389,7 +389,7 @@ private struct TileDetailSheet: View {
     private var title: String {
         switch detail {
         case .dueToday: "Due today"
-        case .dueTomorrow: "Due tomorrow"
+        case .dueTomorrow: WorkingDay.dueLabel()
         case .courierGroup(let g): g.shippingMethod
         case .day(let d): "Due \(Format.day(d.date))"
         }

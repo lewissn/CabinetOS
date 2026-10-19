@@ -30,6 +30,9 @@ enum JobIndexError: LocalizedError {
     case server(Int)
     case decoding(String)
     case offline
+    /// The device is online but the Ops server didn't answer: down, or
+    /// unreachable from this network. Not the same fix as no Wi-Fi.
+    case unreachable
 
     var errorDescription: String? {
         switch self {
@@ -48,7 +51,9 @@ enum JobIndexError: LocalizedError {
         case .decoding(let detail):
             return "The server sent something unexpected. \(detail)"
         case .offline:
-            return "No connection. Job search needs to be online."
+            return "This device is offline. Job search needs Wi-Fi or mobile data."
+        case .unreachable:
+            return "The Ops server didn't answer. Check the connection, then try again in a minute."
         }
     }
 
@@ -223,9 +228,14 @@ final class JobIndexService {
         } catch let error as URLError
             where error.code == .notConnectedToInternet
                 || error.code == .networkConnectionLost
-                || error.code == .timedOut
-                || error.code == .cannotConnectToHost {
+                || error.code == .dataNotAllowed {
             throw JobIndexError.offline
+        } catch let error as URLError
+            where error.code == .timedOut
+                || error.code == .cannotConnectToHost
+                || error.code == .cannotFindHost
+                || error.code == .dnsLookupFailed {
+            throw JobIndexError.unreachable
         }
     }
 

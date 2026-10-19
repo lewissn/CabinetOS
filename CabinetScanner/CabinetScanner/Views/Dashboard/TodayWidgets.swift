@@ -30,14 +30,14 @@ struct TodayFocus {
             day = intelligence.workingDays.first { $0.total > 0 }
         }
         isToday = day.map { cal.isDate($0.date, inSameDayAs: today) } ?? false
-        isTomorrow = day.map { cal.isDateInTomorrow($0.date) } ?? false
+        isTomorrow = day.map { cal.isDate($0.date, inSameDayAs: WorkingDay.next()) } ?? false
     }
 
     /// "Today", "Tomorrow", "Thursday"
     var dayName: String {
         guard let day else { return "Next five days" }
         if isToday { return "Today" }
-        if isTomorrow { return "Tomorrow" }
+        if isTomorrow { return WorkingDay.name() }
         return TodayText.weekdayLong.string(from: day.date)
     }
 }
@@ -163,7 +163,7 @@ struct QuietFigures: View {
     @ViewBuilder
     private var otherDay: some View {
         if focus.isToday {
-            Figure(label: "Tomorrow",
+            Figure(label: WorkingDay.name(),
                    value: isLoaded ? PaperFormat.int(intelligence.dueTomorrow) : "–",
                    caption: "due out", action: onOtherDay)
         } else {
@@ -401,7 +401,8 @@ extension AppNotification {
     func touchesTodayOrTomorrow(now: Date = .now) -> Bool {
         let cal = Calendar.london
         let today = cal.startOfDay(for: now)
-        guard let dayAfter = cal.date(byAdding: .day, value: 2, to: today) else { return false }
+        // Through the next working day: on a Friday, Monday's changes count.
+        guard let dayAfter = cal.date(byAdding: .day, value: 1, to: WorkingDay.next(after: now)) else { return false }
         func near(_ raw: String?) -> Bool {
             guard let raw, let date = TodayText.isoDay.date(from: String(raw.prefix(10))) else { return false }
             return date >= today && date < dayAfter

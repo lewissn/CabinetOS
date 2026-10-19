@@ -105,6 +105,46 @@ extension Calendar {
     }()
 }
 
+// MARK: - The next working day
+//
+// "Tomorrow" at the bench means the next day the workshop despatches. On a
+// Friday that's Monday: counting Saturday showed an empty tomorrow every
+// Friday while Monday's load went unseen.
+
+enum WorkingDay {
+    /// The start of the next working day (Monday–Friday) after `date`'s day.
+    static func next(after date: Date = .now, calendar cal: Calendar = .london) -> Date {
+        var day = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: date))!
+        while cal.isDateInWeekend(day) {
+            day = cal.date(byAdding: .day, value: 1, to: day)!
+        }
+        return day
+    }
+
+    /// "Tomorrow" when the next working day is tomorrow, otherwise its name:
+    /// "Monday".
+    static func name(after date: Date = .now, calendar cal: Calendar = .london) -> String {
+        let next = next(after: date, calendar: cal)
+        let tomorrow = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: date))!
+        if cal.isDate(next, inSameDayAs: tomorrow) { return "Tomorrow" }
+        return weekday.string(from: next)
+    }
+
+    /// "Due tomorrow", "Due Monday"
+    static func dueLabel(after date: Date = .now) -> String {
+        let n = name(after: date)
+        return "Due \(n == "Tomorrow" ? "tomorrow" : n)"
+    }
+
+    private static let weekday: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_GB")
+        f.timeZone = TimeZone(identifier: "Europe/London")
+        f.dateFormat = "EEEE"
+        return f
+    }()
+}
+
 // ============================================================
 // MARK: - Service
 // ============================================================
@@ -124,8 +164,10 @@ final class DashboardService {
         let cal = Calendar.london
         let todayStart = cal.startOfDay(for: Date())
 
-        guard let tomorrowStart = cal.date(byAdding: .day, value: 1, to: todayStart),
-              let tomorrowEnd   = cal.date(byAdding: .day, value: 2, to: todayStart)
+        // "Tomorrow" is the next working day: Monday, from a Friday.
+        let tomorrowStart = WorkingDay.next(after: todayStart, calendar: cal)
+        guard let todayEnd = cal.date(byAdding: .day, value: 1, to: todayStart),
+              let tomorrowEnd = cal.date(byAdding: .day, value: 1, to: tomorrowStart)
         else { return .empty }
 
         // Five working days, Monday to Friday, starting today when today is
@@ -155,7 +197,7 @@ final class DashboardService {
             guard let dueDate = row.parsedDueDate else { continue }
             let dayStart = cal.startOfDay(for: dueDate)
 
-            let isToday    = dayStart >= todayStart && dayStart < tomorrowStart
+            let isToday    = dayStart >= todayStart && dayStart < todayEnd
             let isTomorrow = dayStart >= tomorrowStart && dayStart < tomorrowEnd
 
             let method = row.shippingMethod ?? "Other"

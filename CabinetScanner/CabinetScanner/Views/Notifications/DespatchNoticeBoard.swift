@@ -26,7 +26,7 @@ struct DespatchNoticeBoard: View {
     var body: some View {
         if !shown.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
-                PaperSectionHeader("Date changes for today and tomorrow") {
+                PaperSectionHeader("Date changes for today and \(WorkingDay.name() == "Tomorrow" ? "tomorrow" : WorkingDay.name())") {
                     Button("See all") { showingAll = true }
                         .buttonStyle(.paperText(PaperColor.secondary, .footnote))
                 }
