@@ -177,14 +177,12 @@ struct BoxDetailView: View {
             .paperSheet()
         }
         .fullScreenCover(isPresented: $showScanner) {
-            ScannerView(
-                viewModel: ScannerViewModel(
-                    boxId: viewModel.box.id,
-                    manifestId: viewModel.manifestId,
-                    consignmentId: viewModel.consignmentId,
-                    appState: appState,
-                    expectedProjectName: viewModel.projectName
-                ),
+            ScannerScreen(
+                boxId: viewModel.box.id,
+                manifestId: viewModel.manifestId,
+                consignmentId: viewModel.consignmentId,
+                appState: appState,
+                expectedProjectName: viewModel.projectName,
                 onDismiss: {
                     showScanner = false
                     Task { await viewModel.loadBoxDetail() }
@@ -470,12 +468,12 @@ struct BoxDetailView: View {
             viewModel.stopPolling()
             viewModel.toastMessage = nil
             isClosing = false
-            toaster.show("Box \(number) closed · \(Format.count(count, "panel"))")
+            toaster.show("Box \(number) closed · \(Format.count(count, "panel"))", sealed: true)
             popAfterSheet = true
             showCloseSheet = false
             if printOnClose {
                 let outcome = await LabelPrinter.shared.print([AnyView(closingLabel)], jobName: jobName)
-                if let message = outcome.message { toaster.show("Box \(number) closed · \(message.lowercasedFirst)") }
+                if let message = outcome.message { toaster.show("Box \(number) closed · \(message.lowercasedFirst)", sealed: true) }
             }
         }
     }

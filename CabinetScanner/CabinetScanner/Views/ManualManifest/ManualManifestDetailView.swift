@@ -9,6 +9,8 @@ struct ManualManifestDetailView: View {
     @State private var boxToDelete: ManualManifestBox?
     @State private var showFinishConfirm = false
     @State private var showReopenConfirm = false
+    @State private var showDeleteConfirm = false
+    @Environment(\.dismiss) private var dismiss
 
     private var manifest: ManualManifest { viewModel.manifest }
 
@@ -84,13 +86,11 @@ struct ManualManifestDetailView: View {
             }
         }
         .navigationDestination(for: ManualManifestBox.self) { box in
-            ManualBoxDetailView(
-                viewModel: ManualBoxDetailViewModel(
-                    box: box,
-                    manifestName: viewModel.manifest.manifestName,
-                    courierName: viewModel.manifest.courier,
-                    isManifestFinished: viewModel.manifest.isFinished
-                )
+            ManualBoxScreen(
+                box: box,
+                manifestName: viewModel.manifest.manifestName,
+                courierName: viewModel.manifest.courier,
+                isManifestFinished: viewModel.manifest.isFinished
             )
         }
         .alert(boxToDelete.map { "Delete box \($0.boxNumber)?" } ?? "Delete box?", isPresented: .init(
@@ -118,6 +118,16 @@ struct ManualManifestDetailView: View {
             } else {
                 Text("This locks the manifest. You can reopen it later if needed.")
             }
+        }
+        .alert("Delete \(manifest.manifestName)?", isPresented: $showDeleteConfirm) {
+            Button("Keep consignment", role: .cancel) {}
+            Button("Delete consignment", role: .destructive) {
+                Task {
+                    if await viewModel.deleteManifest() { dismiss() }
+                }
+            }
+        } message: {
+            Text(deleteMessage)
         }
         .alert("Reopen this manifest?", isPresented: $showReopenConfirm) {
             Button("Cancel", role: .cancel) {}
@@ -168,8 +178,43 @@ struct ManualManifestDetailView: View {
         }
     }
 
+    /// Says what goes with it, and what deleting can't take back.
+    private var deleteMessage: String {
+        var parts = [viewModel.boxes.isEmpty
+            ? "The consignment is deleted."
+            : "The consignment and its \(Format.count(viewModel.boxes.count, "box", "boxes")) are deleted, with everything in them."]
+        if manifest.stepsCompletedAt != nil {
+            parts.append("The steps it completed in ShopVOX stay completed.")
+        }
+        parts.append("This can't be undone.")
+        return parts.joined(separator: " ")
+    }
+
+    private var deleteButton: some View {
+        Button(role: .destructive) {
+            showDeleteConfirm = true
+        } label: {
+            if viewModel.isDeleting {
+                ProgressView().tint(PaperColor.danger)
+            } else {
+                Text("Delete consignment")
+            }
+        }
+        .buttonStyle(.paperText(PaperColor.danger, .subhead, weight: .medium))
+        .disabled(viewModel.isDeleting || viewModel.isFinishing)
+        .padding(.top, PaperSpace.l)
+    }
+
     @ViewBuilder
     private var actions: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            actionButtons
+            deleteButton
+        }
+    }
+
+    @ViewBuilder
+    private var actionButtons: some View {
         if manifest.isFinished {
             VStack(spacing: PaperSpace.s) {
                 Button("View summary") { viewModel.showSummary = true }
@@ -203,6 +248,30 @@ struct ManualManifestDetailView: View {
             }
         }
     }
+}
+
+// MARK: - A box's screen, owning its model
+//
+// The box's view model has to be owned here, as a StateObject. It used to be
+// built inline in the destination above and only observed, so whenever this
+// screen redrew behind the box (its own box list finishing a refresh, say)
+// SwiftUI built a fresh, empty model and the box screen kept that one: the
+// items it had loaded vanished and every box read "Nothing was put in this
+// box", though the scans were all there.
+
+struct ManualBoxScreen: View {
+    @StateObject private var viewModel: ManualBoxDetailViewModel
+
+    init(box: ManualManifestBox, manifestName: String, courierName: String?, isManifestFinished: Bool) {
+        _viewModel = StateObject(wrappedValue: ManualBoxDetailViewModel(
+            box: box,
+            manifestName: manifestName,
+            courierName: courierName,
+            isManifestFinished: isManifestFinished
+        ))
+    }
+
+    var body: some View { ManualBoxDetailView(viewModel: viewModel) }
 }
 
 // MARK: - What ShopVOX did
@@ -253,6 +322,7 @@ struct ManualBoxRow: View {
                     Text(detail).paperType(.footnote, numeric: true).foregroundStyle(PaperColor.secondary).lineLimit(1)
                 }
                 Spacer(minLength: PaperSpace.m)
+                FreshSeal(boxId: box.id)
                 StatusText(box.isClosed ? "Closed" : "Open", tone: box.isClosed ? .done : .progress)
                 PaperIcon(.chevronRight, size: 14, color: PaperColor.faint)
             }

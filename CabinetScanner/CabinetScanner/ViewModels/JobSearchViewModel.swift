@@ -10,6 +10,8 @@ final class JobSearchViewModel: ObservableObject {
     @Published private(set) var results: [JobSearchResult] = []
     @Published private(set) var customers: [ShopVoxCustomer] = []
     @Published private(set) var isSearching = false
+    /// The error is the device's access token: the fix is in Settings.
+    @Published private(set) var errorNeedsSettings = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var hasSearched = false
     /// What the server understood the query to be, used to explain no-results.
@@ -92,6 +94,7 @@ final class JobSearchViewModel: ObservableObject {
             customers = []
             errorMessage = (error as? JobIndexError)?.errorDescription
                 ?? error.localizedDescription
+            errorNeedsSettings = (error as? JobIndexError)?.isAuthProblem ?? false
             hasSearched = true
         }
 

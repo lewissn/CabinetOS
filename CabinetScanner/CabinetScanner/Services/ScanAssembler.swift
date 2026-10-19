@@ -36,6 +36,9 @@ final class ScanAssembler {
         let symbology: DetectedSymbology
         let centerPosition: CGPoint
         let timestamp: Date
+        /// Vision's box for the code: normalised, origin bottom-left, in the
+        /// camera's unrotated frame. Used to close the scan corners on it.
+        var boundingBox: CGRect = .zero
     }
 
     enum DetectedSymbology {

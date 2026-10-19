@@ -106,6 +106,9 @@
 		D3D5D3C8E00BC365838E999F /* LabelPrinter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E70892E9A9AC512C44A92B /* LabelPrinter.swift */; };
 		D3509E1AAD13C886506231F3 /* BoxLabels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3DC9E046F256EDBCDF72A46 /* BoxLabels.swift */; };
 		D3523148D1000759D7B553B2 /* JobLabelScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F62664C6E48BF78997C672 /* JobLabelScannerView.swift */; };
+		D330999E3A34C58C1BA87C8B /* TodayWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D333D675129A9CD397E2410D /* TodayWidgets.swift */; };
+		D37BC279675E3DE861D967F9 /* Moments.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3FE2EA61D8E5EDF5DEF67A3 /* Moments.swift */; };
+		D35D7E8446744DFC6D31FD3B /* ScanToPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3486696AE01BC21A09001C2 /* ScanToPack.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -208,6 +211,9 @@
 		D3E70892E9A9AC512C44A92B /* LabelPrinter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelPrinter.swift; sourceTree = "<group>"; };
 		D3DC9E046F256EDBCDF72A46 /* BoxLabels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoxLabels.swift; sourceTree = "<group>"; };
 		D3F62664C6E48BF78997C672 /* JobLabelScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobLabelScannerView.swift; sourceTree = "<group>"; };
+		D333D675129A9CD397E2410D /* TodayWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayWidgets.swift; sourceTree = "<group>"; };
+		D3FE2EA61D8E5EDF5DEF67A3 /* Moments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moments.swift; sourceTree = "<group>"; };
+		D3486696AE01BC21A09001C2 /* ScanToPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanToPack.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -379,6 +385,7 @@
 				B10000000000000000000059 /* SyncBadgeView.swift */,
 				B1000000000000000000001D /* ToastView.swift */,
 				D3DC9E046F256EDBCDF72A46 /* BoxLabels.swift */,
+				D3FE2EA61D8E5EDF5DEF67A3 /* Moments.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -396,6 +403,7 @@
 			children = (
 				B1000000000000000000001F /* ManifestListView.swift */,
 				B10000000000000000000037 /* PackagingHomeView.swift */,
+				D3486696AE01BC21A09001C2 /* ScanToPack.swift */,
 			);
 			path = Manifests;
 			sourceTree = "<group>";
@@ -426,6 +434,7 @@
 				B10000000000000000000029 /* DashboardView.swift */,
 				B10000000000000000000047 /* ReportingView.swift */,
 				D3DE6E2F57F2142B1D1A0E98 /* DashboardService.swift */,
+				D333D675129A9CD397E2410D /* TodayWidgets.swift */,
 			);
 			path = Dashboard;
 			sourceTree = "<group>";
@@ -570,6 +579,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D35D7E8446744DFC6D31FD3B /* ScanToPack.swift in Sources */,
+				D37BC279675E3DE861D967F9 /* Moments.swift in Sources */,
+				D330999E3A34C58C1BA87C8B /* TodayWidgets.swift in Sources */,
 				D3523148D1000759D7B553B2 /* JobLabelScannerView.swift in Sources */,
 				D3509E1AAD13C886506231F3 /* BoxLabels.swift in Sources */,
 				D3D5D3C8E00BC365838E999F /* LabelPrinter.swift in Sources */,
@@ -798,7 +810,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = B54VQ6PV6L;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CabinetScanner/Info.plist;
@@ -826,7 +838,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = B54VQ6PV6L;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CabinetScanner/Info.plist;

@@ -30,6 +30,9 @@ enum JobIndexError: LocalizedError {
     case server(Int)
     case decoding(String)
     case offline
+    /// The device is online but the Ops server didn't answer: down, or
+    /// unreachable from this network. Not the same fix as no Wi-Fi.
+    case unreachable
 
     var errorDescription: String? {
         switch self {
@@ -48,7 +51,9 @@ enum JobIndexError: LocalizedError {
         case .decoding(let detail):
             return "The server sent something unexpected. \(detail)"
         case .offline:
-            return "No connection. Job search needs to be online."
+            return "This device is offline. Job search needs Wi-Fi or mobile data."
+        case .unreachable:
+            return "The Ops server didn't answer. Check the connection, then try again in a minute."
         }
     }
 
@@ -223,9 +228,14 @@ final class JobIndexService {
         } catch let error as URLError
             where error.code == .notConnectedToInternet
                 || error.code == .networkConnectionLost
-                || error.code == .timedOut
-                || error.code == .cannotConnectToHost {
+                || error.code == .dataNotAllowed {
             throw JobIndexError.offline
+        } catch let error as URLError
+            where error.code == .timedOut
+                || error.code == .cannotConnectToHost
+                || error.code == .cannotFindHost
+                || error.code == .dnsLookupFailed {
+            throw JobIndexError.unreachable
         }
     }
 
@@ -311,6 +321,19 @@ final class JobIndexService {
     /// What a consignment for this job would be called, and whether one is
     /// already open. Read before showing the form, so the name is filled in
     /// and an existing consignment can be pointed at rather than duplicated.
+    /// The packing report, computed by Ops. Ops reads the tables next to the
+    /// database, so All Time (every panel scan there has ever been) is one
+    /// small response rather than twenty-odd pages downloaded to the phone.
+    func reportSummary(period: ReportingPeriod, deviceId: String) async throws -> ReportingSummary {
+        var components = URLComponents(string: apiRoot + "/reports/summary")
+        components?.queryItems = [
+            URLQueryItem(name: "period", value: period.slug),
+            URLQueryItem(name: "deviceId", value: deviceId),
+        ]
+        let response: ReportSummaryResponse = try await get(components?.url, missingMeans: .notDeployed)
+        return response.summary
+    }
+
     func consignmentInfo(jobId: String) async throws -> CourierConsignmentInfo {
         let job = jobId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? jobId
         return try await get(
@@ -496,6 +519,25 @@ enum ProductionDateView: String, CaseIterable, Identifiable {
         case .upcoming:          return "calendar.badge.clock"
         case .yesterday:         return "arrow.uturn.backward"
         case .recentlyCompleted: return "checkmark.circle"
+        }
+    }
+}
+
+// MARK: - Report summary
+
+private struct ReportSummaryResponse: Decodable {
+    let ok: Bool
+    let summary: ReportingSummary
+}
+
+extension ReportingPeriod {
+    /// The name Ops uses for the period.
+    var slug: String {
+        switch self {
+        case .today: "today"
+        case .thisWeek: "this-week"
+        case .thisMonth: "this-month"
+        case .allTime: "all-time"
         }
     }
 }

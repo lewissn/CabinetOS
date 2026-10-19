@@ -44,6 +44,12 @@ public enum PaperColor {
     public static let accentInk = Color(light: 0x6A4705, dark: 0xF7CF85)
     public static let onAccent = Color(light: 0x1B1B1A, dark: 0x1B1B1A)
 
+    // Ember: the second brand colour, a brick red that sits with the amber.
+    // Kept for attention: a deadline closing in, a date pulled forward. Text
+    // safe on paper (4.7:1 light, 6.9:1 dark).
+    public static let ember = Color(light: 0xB8462B, dark: 0xF07C5E)
+    public static let emberSoft = Color(light: 0xFBEAE4, dark: 0x33190F)
+
     // Status
     public static let success = Color(light: 0x17754A, dark: 0x62CC94)
     public static let successSoft = Color(light: 0xE9F5EE, dark: 0x15291E)

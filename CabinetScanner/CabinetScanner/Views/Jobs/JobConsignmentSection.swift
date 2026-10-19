@@ -93,7 +93,18 @@ final class JobConsignmentViewModel: ObservableObject {
         errorMessage = nil
 
         do {
-            finishResult = try await service.finishConsignment(jobId: jobId, manifestId: consignment.id)
+            let result = try await service.finishConsignment(jobId: jobId, manifestId: consignment.id)
+            finishResult = result
+            if result.ok, result.finished != false {
+                // No box count on this page, so the moment claims none.
+                MomentCenter.shared.play(FinishMoment(
+                    name: consignment.manifestName,
+                    boxCount: nil,
+                    movedJobOn: result.stepsCompleted == true && result.alreadyCompleted != true
+                ))
+            } else {
+                HapticService.error()
+            }
             await load()
         } catch {
             errorMessage = (error as? JobIndexError)?.errorDescription ?? error.localizedDescription
@@ -124,6 +135,9 @@ struct JobConsignmentScope<Content: View>: View {
         content()
             .environmentObject(viewModel)
             .task { await viewModel.load() }
+            .onReceive(NotificationCenter.default.publisher(for: .courierConsignmentsChanged)) { _ in
+                Task { await viewModel.load() }
+            }
     }
 }
 

@@ -69,7 +69,7 @@ struct MainTabView: View {
                 tabContent(.settings) { SettingsPlaceholderView() }
             }
             .overlay(alignment: .bottom) {
-                ToastView(message: $toaster.message, autoDismissAfter: .seconds(2.4))
+                ToastView(message: $toaster.message, autoDismissAfter: .seconds(2.4), sealed: toaster.sealed)
             }
             // An arriving despatch change, over whatever is on screen. Tapping it
             // goes to the job, which is the only useful thing to do about one.
@@ -88,6 +88,9 @@ struct MainTabView: View {
                 .dynamicTypeSize(...DynamicTypeSize.xxLarge)
         }
         .environmentObject(toaster)
+        // A consignment finished: over everything, tab bar included, but
+        // under a sheet.
+        .overlay { FinishMomentOverlay() }
         .paperBackground()
         .paperStatusBarBackdrop()
     }
@@ -164,6 +167,7 @@ private struct SettingsPlaceholderView: View {
 
                     #if DEBUG
                     DebugHostSection().section()
+                    MotionPreviewSection().section()
                     #endif
                 }
                 .screen()
@@ -420,6 +424,69 @@ private struct DeviceCheckSummary: View {
 
 
 #if DEBUG
+// MARK: - Motion preview
+//
+// Debug builds only. Plays each moment with made-up figures, so they can be
+// judged without closing a real box or finishing a real consignment (both
+// write to the live tables).
+
+private struct MotionPreviewSection: View {
+    @EnvironmentObject private var toaster: Toaster
+    @State private var scanning = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: PaperSpace.s) {
+            PaperSectionHeader("Motion preview")
+            Button("Box sealed") {
+                SealCenter.shared.mark("preview")
+                HapticService.seal()
+                toaster.show("Box 3 closed · 14 panels", sealed: true)
+            }
+            .buttonStyle(.paperText(PaperColor.ink, .subhead, weight: .medium))
+            Button("Consignment finished, 6 boxes, job moved on") {
+                MomentCenter.shared.play(FinishMoment(name: "Sample - #10000", boxCount: 6, movedJobOn: true))
+            }
+            .buttonStyle(.paperText(PaperColor.ink, .subhead, weight: .medium))
+            Button("Consignment finished from a job page") {
+                MomentCenter.shared.play(FinishMoment(name: "Sample - #10000", boxCount: nil, movedJobOn: false))
+            }
+            .buttonStyle(.paperText(PaperColor.ink, .subhead, weight: .medium))
+            Button("Label found") { scanning = true }
+                .buttonStyle(.paperText(PaperColor.ink, .subhead, weight: .medium))
+            Text("Debug builds only. Sample figures; nothing is written.")
+                .paperType(.footnote)
+                .foregroundStyle(PaperColor.tertiary)
+        }
+        .fullScreenCover(isPresented: $scanning) { ScanLockPreview { scanning = false } }
+    }
+}
+
+/// The scan window over a stand-in camera, catching a "label" off-centre.
+private struct ScanLockPreview: View {
+    let onDone: () -> Void
+    @State private var lock: CGRect?
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                Color(white: 0.22).ignoresSafeArea()
+                RoundedRectangle(cornerRadius: 4).fill(.white)
+                    .frame(width: 92, height: 92)
+                    .position(x: geo.size.width * 0.58, y: geo.size.height * 0.4)
+                ScanOverlayView(lock: lock).ignoresSafeArea()
+            }
+            .task {
+                try? await Task.sleep(for: .seconds(1))
+                HapticService.success()
+                lock = CGRect(x: geo.size.width * 0.58 - 46, y: geo.size.height * 0.4 - 46, width: 92, height: 92)
+                try? await Task.sleep(for: .seconds(1.6))
+                onDone()
+            }
+        }
+        .ignoresSafeArea()
+    }
+}
+
 // MARK: - Development host override
 //
 // Debug builds only, and compiled out of Release rather than disabled — see

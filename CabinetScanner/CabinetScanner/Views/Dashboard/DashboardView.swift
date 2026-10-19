@@ -5,23 +5,33 @@ import SwiftUI
 // MARK: - Today
 // ============================================================
 //
-// What leaves today, read first. The figures are the dashboard's own
-// dispatch query (jobs due today and tomorrow, by courier) and the week's
-// packing from ReportingService; nothing here is estimated. There is no
-// packed / packing / to-start bar because the dispatch query doesn't say
-// which job is at which stage.
+// A dashboard that fits on one screen: the day that matters as a ring, three
+// quiet figures, the week's rhythm and one line of news. The figures are the
+// dispatch query (jobs due over the next five working days, with each job's
+// ShopVOX step) and the week's packing from ReportingService; nothing here is
+// estimated. Each figure opens the jobs behind it, grouped by courier.
+//
+// It only scrolls when it can't fit: a small phone or very large text.
 
 struct DashboardView: View {
     @StateObject private var vm = DashboardViewModel()
-    @StateObject private var apcVM = APCDeadlineViewModel()
     @StateObject private var week = WeekFigures()
     @ObservedObject private var notifications = NotificationService.shared
     @StateObject private var search = JobSearchViewModel()
     @EnvironmentObject private var appState: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showingNotifications = false
+    @State private var showingVan = false
     /// Once the dispatch figures have loaded, a refresh keeps showing them
     /// rather than collapsing the page while it reloads.
     @State private var hasLoaded = false
+    /// Drives the first draw: the ring sweeps round and the bars rise once
+    /// there's something to show.
+    @State private var revealed = false
+    @State private var isRefreshing = false
+    @State private var updatedAt: Date?
     /// Held explicitly so a scanned label replaces whatever is open rather
     /// than stacking on it, as on the Jobs tab.
     @State private var path = NavigationPath()
@@ -37,7 +47,9 @@ struct DashboardView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                // Fixed above both the dashboard and the results, so the field
+                // keeps its focus as one replaces the other.
                 VStack(alignment: .leading, spacing: 0) {
                     header
                     HStack(alignment: .center, spacing: PaperSpace.s) {
@@ -45,17 +57,40 @@ struct DashboardView: View {
                         ScanLabelButton { scanningLabel = true }
                     }
                     .padding(.top, PaperSpace.l)
-
-                    if isSearching {
-                        JobSearchResults(viewModel: search).padding(.top, PaperSpace.l)
-                    } else {
-                        dashboardContent
-                    }
                 }
                 .screen()
-                .padding(.bottom, 120)
+
+                ZStack(alignment: .top) {
+                    if isSearching {
+                        ScrollView {
+                            JobSearchResults(viewModel: search)
+                                .padding(.top, PaperSpace.l)
+                                .screen()
+                                .padding(.bottom, 120)
+                        }
+                        .scrollDismissesKeyboard(.immediately)
+                        .transition(.opacity.combined(with: .offset(y: 10)))
+                    } else {
+                        GeometryReader { geo in
+                            let height = geo.size.height
+                            if let ring = ringFitting(height) {
+                                dashboard(ring: ring)
+                                    .screen()
+                                    .frame(height: height, alignment: .top)
+                            } else {
+                                ScrollView { dashboard(ring: 140).screen() }
+                                    .refreshable { await refreshAll() }
+                            }
+                        }
+                        // The keyboard rises over the dashboard rather than
+                        // squeezing it into its scrolling form.
+                        .ignoresSafeArea(.keyboard)
+                        .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
+                    }
+                }
+                .frame(maxHeight: .infinity, alignment: .top)
+                .animation(reduceMotion ? .easeInOut(duration: 0.15) : PaperMotion.spring, value: isSearching)
             }
-            .scrollDismissesKeyboard(.immediately)
             .paperRootScreen()
             .navigationDestination(for: JobSearchResult.self) { result in
                 JobDetailView(jobId: result.id, knownTitle: result.displayTitle, jobTitle: result.jobTitle, backLabel: "Today")
@@ -75,29 +110,32 @@ struct DashboardView: View {
                     onCancel: { scanningLabel = false }
                 )
             }
-            .refreshable { await refreshAll() }
             .task {
+                // Figures kept from earlier today show at once, ring drawn,
+                // while fresh ones load over them.
+                if vm.state == .loaded, !hasLoaded {
+                    hasLoaded = true
+                    revealed = true
+                    updatedAt = vm.cachedAt
+                }
                 await refreshAll()
-                apcVM.startCountdown()
             }
             // Every tab is alive from launch: coming back to Today is when it
-            // reloads, and the countdown only runs while it's on screen.
-            .onTabActiveChange { active in
-                if active {
-                    apcVM.startCountdown()
-                    Task { await refreshAll() }
-                } else {
-                    apcVM.stopCountdown()
-                }
-            }
+            // reloads, as is coming back to the app or a new day starting.
+            .onTabReturn { await refreshAll() }
+            .onResume { await refreshAll() }
             .onChange(of: vm.state) { _, state in
-                if state == .loaded { hasLoaded = true }
+                if state == .loaded {
+                    hasLoaded = true
+                    revealed = true
+                }
             }
             .sheet(isPresented: $showingNotifications) {
                 NotificationsView().paperSheet()
             }
-            .onDisappear {
-                apcVM.stopCountdown()
+            .sheet(isPresented: $showingVan) {
+                InHouseVanSheet(jobs: vm.intelligence.inHouseJobs)
+                    .paperSheet(detents: [.medium, .large])
             }
             .sheet(item: $vm.selectedTile) { detail in
                 TileDetailSheet(detail: detail, sections: vm.sections(for: detail))
@@ -117,10 +155,13 @@ struct DashboardView: View {
     }
 
     private func refreshAll() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
         await vm.refresh()
-        await apcVM.refresh()
         await notifications.refresh()
         await week.load(deviceId: appState.deviceId)
+        if vm.state == .loaded { updatedAt = .now }
+        isRefreshing = false
     }
 
     private var showsDispatch: Bool { vm.state == .loaded || (hasLoaded && vm.state == .loading) }
@@ -140,171 +181,140 @@ struct DashboardView: View {
                 Text(Format.today()).paperType(.subhead).foregroundStyle(PaperColor.secondary)
                 Spacer()
                 // The way through to the full list, carrying the unread count.
-                // Not a sixth tab: the bar is already at five.
                 NotificationBell { showingNotifications = true }
             }
             Text(greeting)
                 .paperType(.greeting)
                 .foregroundStyle(PaperColor.ink)
                 .accessibilityAddTraits(.isHeader)
-            Text("\(appState.stationId.prefix(1).uppercased() + appState.stationId.dropFirst()) station")
-                .paperType(.footnote)
-                .foregroundStyle(PaperColor.secondary)
         }
         .padding(.top, PaperSpace.s)
     }
 
     // MARK: Dashboard
 
-    @ViewBuilder
-    private var dashboardContent: some View {
-        if apcVM.shouldShow {
-            APCDeadlineBannerView(viewModel: apcVM).section(top: PaperSpace.xxl)
-        }
+    private var focus: TodayFocus { TodayFocus(vm.intelligence) }
 
-        // Above the numbers on purpose. A despatch date that has moved
-        // changes what the numbers mean, so it has to be read first.
-        DespatchNoticeBoard(showingAll: $showingNotifications).section()
-
-        summary.section()
-
-        leaving.section()
-        inHouseLoading
-        thisWeek.section()
+    /// Spacers with a floor and a ceiling: on a tall screen the blocks breathe,
+    /// on a short one they close up before anything has to scroll.
+    ///
+    /// Not a Spacer: a Spacer's ideal height ignores its minimum, so the
+    /// fit-or-scroll check counted the gaps as nothing and chose the fixed
+    /// layout for a screen it then overflowed.
+    private func gap(_ minimum: CGFloat, _ maximum: CGFloat) -> some View {
+        Color.clear.frame(minHeight: minimum, maxHeight: maximum * (isWide ? 1.6 : 1))
     }
 
-    // MARK: Summary: the number that matters
+    /// An iPad, where the same layout is drawn larger rather than left
+    /// clustered at the top of a tall screen.
+    private var isWide: Bool { sizeClass == .regular }
 
-    @ViewBuilder
-    private var summary: some View {
-        switch vm.state {
-        case .loading where !hasLoaded:
-            Headline(value: "–", unit: "jobs due out today", detail: "Loading")
-        case .error(let message):
-            PaperEmptyState("Today's despatch didn't load", message: message, actionTitle: "Try again") {
-                Task { await vm.refresh() }
-            }
-        default:
-            let today = vm.intelligence.todayJobs
-            let toGo = today.filter { $0.stage != .despatched }.count
-            VStack(alignment: .leading, spacing: PaperSpace.l) {
-                Button { vm.selectedTile = .dueToday } label: {
-                    Headline(
-                        value: PaperFormat.int(toGo),
-                        unit: toGo == 1 ? "job still to go out today" : "jobs still to go out today",
-                        detail: "\(PaperFormat.int(today.count)) due today · \(PaperFormat.int(vm.intelligence.dueTomorrow)) tomorrow"
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Shows the jobs due today")
-
-                if !today.isEmpty { StageSummary(jobs: today) }
-            }
-        }
+    /// The ring's size for the height there is, or nil when the page has to
+    /// scroll: a very short screen, or text set large enough that the fixed
+    /// layout wouldn't hold. Everything but the ring needs about 410 pt; the
+    /// ring takes what's left, within limits.
+    private func ringFitting(_ height: CGFloat) -> CGFloat? {
+        guard dynamicTypeSize <= .xLarge else { return nil }
+        let ring = min(height - 410, isWide ? 260 : 176)
+        return ring >= 128 ? ring : nil
     }
 
-    // MARK: Leaving, by courier
+    private func dashboard(ring: CGFloat) -> some View {
+        let focus = focus
+        return VStack(alignment: .leading, spacing: 0) {
+            gap(PaperSpace.l, 56)
 
-    private var leaving: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // The way to Packing is always here, loaded or not.
-            PaperSectionHeader("By courier") {
-                Button("Packing", action: switchToPackaging)
-                    .buttonStyle(.paperText(PaperColor.secondary, .footnote))
-            }
-            if !showsDispatch {
-                Text(vm.state == .loading ? "Loading" : "Not available until today's despatch loads.")
-                    .paperType(.subhead)
-                    .foregroundStyle(PaperColor.secondary)
-                    .padding(.vertical, PaperSpace.m)
-            } else if vm.intelligence.courierGroups.isEmpty {
-                    Text("Nothing is due out today or tomorrow.")
-                        .paperType(.subhead)
-                        .foregroundStyle(PaperColor.secondary)
-                        .padding(.vertical, PaperSpace.m)
-                } else {
-                    ForEach(vm.intelligence.courierGroups) { group in
-                        Button { vm.selectedTile = .courierGroup(group) } label: {
-                            CourierGroupRow(group: group)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    Button { vm.selectedTile = .dueTomorrow } label: {
-                        PaperRow("Everything due tomorrow", trailing: PaperFormat.int(vm.intelligence.dueTomorrow), chevron: true)
-                    }
-                    .buttonStyle(.plain)
-            }
-        }
-    }
-
-    // MARK: In-house loading order
-
-    @ViewBuilder
-    private var inHouseLoading: some View {
-        if showsDispatch && !vm.intelligence.inHouseJobs.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
-                PaperSectionHeader("In-house van") {
-                    Text("Load last drop first").paperType(.footnote).foregroundStyle(PaperColor.tertiary)
+            if case .error(let message) = vm.state, !hasLoaded {
+                PaperEmptyState("Today's despatch didn't load", message: message, actionTitle: "Try again") {
+                    Task { await refreshAll() }
                 }
-                ForEach(Array(vm.intelligence.inHouseJobs.enumerated()), id: \.element.id) { index, job in
-                    NavigationLink {
-                        JobLookupView(salesOrder: job.salesOrder, customer: job.customer)
-                    } label: {
-                        RowContainer {
-                            HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
-                                Text("\(index + 1)")
-                                    .paperType(.subhead, numeric: true)
-                                    .foregroundStyle(PaperColor.secondary)
-                                    .frame(width: 22, alignment: .leading)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(job.customer).paperType(.body).foregroundStyle(PaperColor.ink).lineLimit(1)
-                                    HStack(spacing: PaperSpace.s) {
-                                        Code("SO \(job.salesOrder)")
-                                        if let postcode = job.postcode, !postcode.isEmpty { Code(postcode) }
-                                    }
-                                }
-                                Spacer(minLength: PaperSpace.m)
-                                StatusText(job.stage.label, tone: job.stage.tone)
-                            }
-                        }
-                        .accessibilityElement(children: .combine)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(job.salesOrder == "—")
-                }
-            }
-            .section()
-        }
-    }
-
-    // MARK: This week
-
-    private var thisWeek: some View {
-        VStack(alignment: .leading, spacing: PaperSpace.l) {
-            PaperSectionHeader("Packing this week") {
-                Button("Reports") { switchToReports() }
-                    .buttonStyle(.paperText(PaperColor.secondary, .footnote))
-            }
-            if let summary = week.summary {
-                HStack(alignment: .top) {
-                    PaperStat(PaperFormat.int(summary.completionRates.totalBoxesPacked), label: "Boxes packed")
-                    PaperStat(PaperFormat.int(summary.volume.totalItemsScanned), label: "Panels scanned")
-                    let c = summary.completionRates
-                    PaperStat(c.totalConsignments > 0
-                              ? "\(PaperFormat.int(c.completedConsignments)) of \(PaperFormat.int(c.totalConsignments))"
-                              : "0",
-                              label: "Consignments done")
-                }
-            } else if let error = week.errorMessage {
-                Text(error).paperType(.subhead).foregroundStyle(PaperColor.secondary)
             } else {
-                HStack(alignment: .top) {
-                    PaperStat("–", label: "Boxes packed")
-                    PaperStat("–", label: "Panels scanned")
-                    PaperStat("–", label: "Consignments done")
+                FocusRing(focus: focus, isLoaded: showsDispatch, revealed: revealed, diameter: ring) {
+                    open(focus)
                 }
+            }
+
+            gap(PaperSpace.l, 52)
+
+            QuietFigures(
+                intelligence: vm.intelligence,
+                focus: focus,
+                isLoaded: showsDispatch,
+                boxesThisWeek: week.summary?.completionRates.totalBoxesPacked,
+                onAPC: { vm.selectedTile = .courierGroup($0) },
+                onOtherDay: { vm.selectedTile = focus.isToday ? .dueTomorrow : .dueToday },
+                onWeek: switchToReports
+            )
+
+            gap(PaperSpace.l, 52)
+
+            HStack(alignment: .firstTextBaseline) {
+                Text("Next \(DashboardService.workingDaysShown) working days")
+                    .paperType(.caption)
+                    .foregroundStyle(PaperColor.tertiary)
+                Spacer()
+                if showsDispatch {
+                    Text(Format.count(vm.intelligence.workingDays.reduce(0) { $0 + $1.total }, "job"))
+                        .paperType(.caption, numeric: true)
+                        .foregroundStyle(PaperColor.tertiary)
+                        .contentTransition(.numericText())
+                }
+            }
+            WeekRhythm(days: showsDispatch ? vm.intelligence.workingDays : [],
+                       focusDate: focus.day?.date,
+                       revealed: revealed,
+                       barWidth: isWide ? 22 : 14) { vm.selectedTile = .day($0) }
+                .frame(minHeight: 112, maxHeight: isWide ? 340 : 190)
+                .padding(.top, PaperSpace.m)
+                // On iPad, spare height goes to the bars before the gap under
+                // them; on a phone the gaps share it, so the ring can breathe.
+                .layoutPriority(isWide ? 1 : 0)
+
+            // Whatever height is left goes here, so the news and the footer
+            // sit at the foot of the screen.
+            gap(PaperSpace.m, .infinity)
+
+            TodayAlertLine { showingNotifications = true }
+
+            footer
+                .padding(.bottom, PaperSpace.m)
+        }
+    }
+
+    /// The ring's day, opened as its jobs by courier.
+    private func open(_ focus: TodayFocus) {
+        guard let day = focus.day else { return }
+        vm.selectedTile = focus.isToday ? .dueToday : (focus.isTomorrow ? .dueTomorrow : .day(day))
+    }
+
+    // MARK: Footer
+
+    private var footer: some View {
+        HStack(spacing: PaperSpace.l) {
+            Button {
+                Task { await refreshAll() }
+            } label: {
+                HStack(spacing: 6) {
+                    PaperIcon(.sync, size: 12, color: PaperColor.tertiary)
+                        .rotationEffect(.degrees(isRefreshing ? 360 : 0))
+                        .animation(isRefreshing && !reduceMotion
+                                   ? .linear(duration: 0.9).repeatForever(autoreverses: false)
+                                   : .default, value: isRefreshing)
+                    Text(isRefreshing ? "Updating" : updatedAt.map { "Updated \(Format.time($0))" } ?? "Update")
+                        .paperType(.caption, numeric: true)
+                        .foregroundStyle(PaperColor.tertiary)
+                }
+                .frame(minHeight: PaperSpace.tap)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Update the dashboard")
+
+            Spacer(minLength: 0)
+
+            if showsDispatch && !vm.intelligence.inHouseJobs.isEmpty {
+                Button("In-house van · \(vm.intelligence.inHouseJobs.count)") { showingVan = true }
+                    .buttonStyle(.paperText(PaperColor.secondary, .caption))
             }
         }
     }
@@ -317,52 +327,19 @@ final class WeekFigures: ObservableObject {
     @Published private(set) var summary: ReportingSummary?
     @Published private(set) var errorMessage: String?
     private let service = ReportingService()
+    private let cache = SameDayCache<ReportingSummary>(name: "week")
+
+    init() { summary = cache.load()?.value }
 
     func load(deviceId: String) async {
         do {
-            summary = try await service.fetchReport(for: .thisWeek, deviceId: deviceId)
+            let fresh = try await service.fetchReport(for: .thisWeek, deviceId: deviceId)
+            summary = fresh
+            cache.save(fresh)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
         }
-    }
-}
-
-// ============================================================
-// MARK: - Courier row
-// ============================================================
-
-private struct CourierGroupRow: View {
-    let group: CourierGroup
-
-    /// The one collection time the app knows: APC's 14:00 cut-off.
-    private var isAPC: Bool { group.shippingMethod.localizedCaseInsensitiveContains("APC") }
-
-    var body: some View {
-        RowContainer {
-            HStack(alignment: .center, spacing: PaperSpace.m) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(group.shippingMethod).paperType(.body).foregroundStyle(PaperColor.ink).lineLimit(2)
-                    if isAPC {
-                        Text("Cut-off 14:00").paperType(.footnote).foregroundStyle(PaperColor.secondary)
-                    }
-                }
-                Spacer(minLength: PaperSpace.m)
-                VStack(alignment: .trailing, spacing: 3) {
-                    let toGo = group.todayJobs.filter { $0.stage != .despatched }.count
-                    Text(group.dueToday == 0 ? "0 today" : "\(PaperFormat.int(toGo)) of \(PaperFormat.int(group.dueToday)) to go today")
-                        .paperType(.subhead, numeric: true)
-                        .foregroundStyle(toGo > 0 ? PaperColor.ink : PaperColor.secondary)
-                    if group.dueTomorrow > 0 {
-                        Text("\(PaperFormat.int(group.dueTomorrow)) tomorrow")
-                            .paperType(.caption, numeric: true)
-                            .foregroundStyle(PaperColor.tertiary)
-                    }
-                }
-                PaperIcon(.chevronRight, size: 14, color: PaperColor.faint)
-            }
-        }
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -386,34 +363,6 @@ extension DispatchStage {
         case .packing: .progress
         case .packed, .despatched: .done
         }
-    }
-}
-
-/// Today's jobs by how far they've got, from ShopVOX's steps.
-private struct StageSummary: View {
-    let jobs: [DispatchJob]
-
-    private func count(_ stage: DispatchStage) -> Int { jobs.filter { $0.stage == stage }.count }
-
-    var body: some View {
-        let total = Double(max(jobs.count, 1))
-        VStack(alignment: .leading, spacing: PaperSpace.m) {
-            PaperCompositionBar([
-                PaperSegment(id: "out", fraction: Double(count(.despatched) + count(.packed)) / total, color: PaperColor.success),
-                PaperSegment(id: "packing", fraction: Double(count(.packing)) / total, color: PaperColor.accent),
-                PaperSegment(id: "to", fraction: Double(count(.toPack)) / total, color: PaperColor.track),
-            ], height: 10)
-            PaperFlowLayout(spacing: PaperSpace.l) {
-                ForEach([DispatchStage.despatched, .packed, .packing, .toPack], id: \.self) { stage in
-                    if count(stage) > 0 {
-                        StatusText("\(count(stage)) \(stage.label.lowercased())", tone: stage.tone)
-                    }
-                }
-            }
-            Text("From each job's step in ShopVOX.")
-                .paperType(.caption).foregroundStyle(PaperColor.tertiary)
-        }
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -454,8 +403,9 @@ private struct TileDetailSheet: View {
     private var title: String {
         switch detail {
         case .dueToday: "Due today"
-        case .dueTomorrow: "Due tomorrow"
+        case .dueTomorrow: WorkingDay.dueLabel()
         case .courierGroup(let g): g.shippingMethod
+        case .day(let d): "Due \(Format.day(d.date))"
         }
     }
 
@@ -517,5 +467,56 @@ private struct ScanLabelButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Scan a job label")
+    }
+}
+
+// MARK: - In-house van
+
+/// The in-house van's drops for today and tomorrow, in loading order: sorted
+/// by postcode, so the last drop goes in first.
+private struct InHouseVanSheet: View {
+    let jobs: [DispatchJob]
+
+    var body: some View {
+        NavigationStack {
+            SheetScreen("In-house van") {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Load last drop first")
+                        .paperType(.footnote)
+                        .foregroundStyle(PaperColor.tertiary)
+                        .padding(.top, PaperSpace.s)
+                    VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(jobs.enumerated()), id: \.element.id) { index, job in
+                        NavigationLink {
+                            JobLookupView(salesOrder: job.salesOrder, customer: job.customer)
+                        } label: {
+                            RowContainer {
+                                HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
+                                    Text("\(index + 1)")
+                                        .paperType(.subhead, numeric: true)
+                                        .foregroundStyle(PaperColor.secondary)
+                                        .frame(width: 22, alignment: .leading)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(job.customer).paperType(.body).foregroundStyle(PaperColor.ink).lineLimit(1)
+                                        HStack(spacing: PaperSpace.s) {
+                                            Code("SO \(job.salesOrder)")
+                                            if let postcode = job.postcode, !postcode.isEmpty { Code(postcode) }
+                                        }
+                                    }
+                                    Spacer(minLength: PaperSpace.m)
+                                    StatusText(job.stage.label, tone: job.stage.tone)
+                                }
+                            }
+                            .accessibilityElement(children: .combine)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(job.salesOrder == "—")
+                    }
+                    }
+                    .padding(.top, PaperSpace.l)
+                }
+            }
+            .toolbar(.hidden, for: .navigationBar)
+        }
     }
 }

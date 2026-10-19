@@ -312,7 +312,7 @@ public struct PaperRing: View {
 
 // MARK: - Marks
 
-/// Completion circle: open, done (red), muted done (grey) or active (red ring).
+/// Completion circle: open, done (green), muted done (grey) or active (amber ring).
 public struct PaperCheck: View {
     public enum State: Sendable { case open, done, mutedDone, active }
     let state: State

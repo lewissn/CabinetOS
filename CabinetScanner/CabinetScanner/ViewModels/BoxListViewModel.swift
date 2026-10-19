@@ -1,4 +1,6 @@
+import CabinetDesign
 import Foundation
+import SwiftUI
 
 @MainActor
 final class BoxListViewModel: ObservableObject {
@@ -32,7 +34,9 @@ final class BoxListViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         do {
-            boxes = try await api.fetchBoxes(consignmentId: consignment.id)
+            let fresh = try await api.fetchBoxes(consignmentId: consignment.id)
+            // Coming back from a box just closed: it glides from Open to Closed.
+            if hasLoaded { withAnimation(PaperMotion.spring) { boxes = fresh } } else { boxes = fresh }
         } catch {
             errorMessage = error.localizedDescription
         }

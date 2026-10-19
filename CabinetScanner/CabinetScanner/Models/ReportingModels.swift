@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Reporting Period
 
-enum ReportingPeriod: String, CaseIterable, Identifiable {
+enum ReportingPeriod: String, CaseIterable, Identifiable, Codable {
     case today = "Today"
     case thisWeek = "This Week"
     case thisMonth = "This Month"
@@ -59,13 +59,13 @@ enum ReportingPeriod: String, CaseIterable, Identifiable {
 
 // MARK: - Stat Groups
 
-struct PackingSpeedStats {
+struct PackingSpeedStats: Codable {
     let averageCompletionMinutes: Double
     let itemsScannedInPeriod: Int
     let averageItemsPerDay: Double
 }
 
-struct CompletionRateStats {
+struct CompletionRateStats: Codable {
     let completedConsignments: Int
     let openConsignments: Int
     let totalConsignments: Int
@@ -74,7 +74,7 @@ struct CompletionRateStats {
     let averageBoxesPerConsignment: Double
 }
 
-struct VolumeStats {
+struct VolumeStats: Codable {
     let totalConsignments: Int
     let totalBoxes: Int
     let totalItemsScanned: Int
@@ -107,7 +107,7 @@ enum WrapScoring {
 
 /// Quality-first wrapping stats. Points are only awarded for a box that was
 /// never reworked, so rushing a box closed never improves a score.
-struct WrapLeagueStats {
+struct WrapLeagueStats: Codable {
     let wrappedBoxes: Int
     let cleanWrappedBoxes: Int
     let cleanWrapPercentage: Double
@@ -123,7 +123,7 @@ struct WrapLeagueStats {
 
 /// Keyed by device rather than typed name — the operator name is free text, so
 /// "Dave" and "dave " would otherwise split into two competing rows.
-struct WrapperStanding: Identifiable {
+struct WrapperStanding: Identifiable, Codable {
     let deviceId: String
     let name: String
     let wrappedBoxes: Int
@@ -136,7 +136,7 @@ struct WrapperStanding: Identifiable {
 
 // MARK: - Combined Summary
 
-struct ReportingSummary {
+struct ReportingSummary: Codable {
     let period: ReportingPeriod
     let packingSpeed: PackingSpeedStats
     let completionRates: CompletionRateStats

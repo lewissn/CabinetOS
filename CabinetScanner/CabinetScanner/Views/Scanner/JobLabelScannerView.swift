@@ -9,7 +9,7 @@ import SwiftUI
 // (https://ops…/jobs/<id>, cabinetscanner://job/<id>) and "job:9731" work too.
 
 /// What a job label's QR code points at.
-enum JobLabelTarget: Equatable {
+enum JobLabelTarget: Hashable {
     case jobId(String)
     case salesOrder(String)
 
@@ -57,12 +57,16 @@ enum JobLabelTarget: Equatable {
 @MainActor
 final class JobLabelScanCoordinator: ObservableObject, CameraServiceDelegate {
     let cameraService = CameraService()
+    let geometry = PreviewGeometry()
     @Published var hint = "Hold the job label's QR code in the frame"
+    /// Where the found label is on screen, for the corners to close on.
+    @Published var lock: CGRect?
     var onFound: ((JobLabelTarget) -> Void)?
     private var found = false
 
     func start() {
         found = false
+        lock = nil
         cameraService.delegate = self
         Task {
             await cameraService.checkPermission()
@@ -80,9 +84,18 @@ final class JobLabelScanCoordinator: ObservableObject, CameraServiceDelegate {
         Task { @MainActor in
             guard !found else { return }
             let codes = detections.filter { $0.symbology == .qr }
-            if let target = codes.lazy.compactMap({ JobLabelTarget(payload: $0.payload) }).first {
+            if let code = codes.first(where: { JobLabelTarget(payload: $0.payload) != nil }),
+               let target = JobLabelTarget(payload: code.payload) {
                 found = true
                 HapticService.success()
+                // Hold the frame with the corners on the label for a beat,
+                // then open the job.
+                lock = geometry.rect(forVisionBox: code.boundingBox) ?? .zero
+                switch target {
+                case .salesOrder(let number): hint = "Found sales order \(number)"
+                case .jobId: hint = "Found the job"
+                }
+                try? await Task.sleep(for: .seconds(UIAccessibility.isReduceMotionEnabled ? 0.2 : 0.5))
                 stop()
                 onFound?(target)
             } else if !codes.isEmpty {
@@ -102,10 +115,10 @@ struct JobLabelScannerView: View {
         ZStack {
             PaperColor.inverse.ignoresSafeArea()
 
-            CameraPreviewView(session: coordinator.cameraService.captureSession)
+            CameraPreviewView(session: coordinator.cameraService.captureSession, geometry: coordinator.geometry)
                 .ignoresSafeArea()
 
-            ScanOverlayView()
+            ScanOverlayView(lock: coordinator.lock)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
 

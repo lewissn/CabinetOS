@@ -118,8 +118,8 @@ final class ManualBoxDetailViewModel: ObservableObject {
                 weightKG: weightKG,
                 createdAt: box.createdAt
             )
-            toastMessage = "Box \(box.boxNumber) closed"
-            HapticService.success()
+            HapticService.seal()
+            SealCenter.shared.mark(box.id)
             return true
         } catch {
             errorMessage = error.localizedDescription
@@ -142,8 +142,8 @@ final class ManualBoxDetailViewModel: ObservableObject {
                 weightKG: box.weightKG,
                 createdAt: box.createdAt
             )
-            toastMessage = "Box \(box.boxNumber) closed"
-            HapticService.success()
+            HapticService.seal()
+            SealCenter.shared.mark(box.id)
             return true
         } catch {
             errorMessage = error.localizedDescription

@@ -8,13 +8,15 @@ import Foundation
 // MARK: - Models
 // ============================================================
 
-struct DispatchIntelligence {
+struct DispatchIntelligence: Codable {
     let dueToday: Int
     let dueTomorrow: Int
     let courierGroups: [CourierGroup]
     let inHouseJobs: [DispatchJob]
     let todayJobs: [DispatchJob]
     let tomorrowJobs: [DispatchJob]
+    /// The next five working days from today, for the "Coming up" chart.
+    var workingDays: [DayLoad] = []
 
     static let empty = DispatchIntelligence(
         dueToday: 0, dueTomorrow: 0, courierGroups: [], inHouseJobs: [],
@@ -22,7 +24,19 @@ struct DispatchIntelligence {
     )
 }
 
-struct CourierGroup: Identifiable {
+/// Everything due out on one day.
+struct DayLoad: Identifiable, Codable {
+    var id: Date { date }
+    let date: Date
+    let jobs: [DispatchJob]
+
+    var total: Int { jobs.count }
+    /// Packed or despatched: ready to go or gone.
+    var ready: Int { jobs.filter { $0.stage >= .packed }.count }
+    var packing: Int { jobs.filter { $0.stage == .packing }.count }
+}
+
+struct CourierGroup: Identifiable, Codable {
     var id: String { shippingMethod }
     let shippingMethod: String
     let dueToday: Int
@@ -33,7 +47,7 @@ struct CourierGroup: Identifiable {
     var hasJobs: Bool { dueToday > 0 || dueTomorrow > 0 }
 }
 
-struct DispatchJob: Identifiable {
+struct DispatchJob: Identifiable, Codable {
     let id: String
     let customer: String
     let salesOrder: String
@@ -50,7 +64,7 @@ struct DispatchJob: Identifiable {
 /// completed, so without this a job despatched on Tuesday still counted as
 /// due out on Friday. Every job due in the week of 12 Oct 2026 that the old
 /// query returned was already "Despatch: completed".
-enum DispatchStage: Int, Comparable {
+enum DispatchStage: Int, Comparable, Codable {
     case toPack, packing, packed, despatched
 
     init(step: String?, status: String?) {
@@ -65,7 +79,9 @@ enum DispatchStage: Int, Comparable {
         case "Pack & Wrap":
             switch status {
             case "completed": self = .packed
-            case "started", "paused", "idling", "stopped": self = .packing
+            // "idling" is a step waiting to be started: on 19 Oct 2026 every
+            // Pack & Wrap job not completed was idling, none started.
+            case "started", "paused", "stopped": self = .packing
             default: self = .toPack
             }
         default:
@@ -89,11 +105,53 @@ extension Calendar {
     }()
 }
 
+// MARK: - The next working day
+//
+// "Tomorrow" at the bench means the next day the workshop despatches. On a
+// Friday that's Monday: counting Saturday showed an empty tomorrow every
+// Friday while Monday's load went unseen.
+
+enum WorkingDay {
+    /// The start of the next working day (Monday–Friday) after `date`'s day.
+    static func next(after date: Date = .now, calendar cal: Calendar = .london) -> Date {
+        var day = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: date))!
+        while cal.isDateInWeekend(day) {
+            day = cal.date(byAdding: .day, value: 1, to: day)!
+        }
+        return day
+    }
+
+    /// "Tomorrow" when the next working day is tomorrow, otherwise its name:
+    /// "Monday".
+    static func name(after date: Date = .now, calendar cal: Calendar = .london) -> String {
+        let next = next(after: date, calendar: cal)
+        let tomorrow = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: date))!
+        if cal.isDate(next, inSameDayAs: tomorrow) { return "Tomorrow" }
+        return weekday.string(from: next)
+    }
+
+    /// "Due tomorrow", "Due Monday"
+    static func dueLabel(after date: Date = .now) -> String {
+        let n = name(after: date)
+        return "Due \(n == "Tomorrow" ? "tomorrow" : n)"
+    }
+
+    private static let weekday: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_GB")
+        f.timeZone = TimeZone(identifier: "Europe/London")
+        f.dateFormat = "EEEE"
+        return f
+    }()
+}
+
 // ============================================================
 // MARK: - Service
 // ============================================================
 
 final class DashboardService {
+
+    static let workingDaysShown = 5
 
     private static let inHouseKeywords = ["in-house", "in house", "inhouse"]
 
@@ -106,11 +164,24 @@ final class DashboardService {
         let cal = Calendar.london
         let todayStart = cal.startOfDay(for: Date())
 
-        guard let tomorrowStart = cal.date(byAdding: .day, value: 1, to: todayStart),
-              let tomorrowEnd   = cal.date(byAdding: .day, value: 2, to: todayStart)
+        // "Tomorrow" is the next working day: Monday, from a Friday.
+        let tomorrowStart = WorkingDay.next(after: todayStart, calendar: cal)
+        guard let todayEnd = cal.date(byAdding: .day, value: 1, to: todayStart),
+              let tomorrowEnd = cal.date(byAdding: .day, value: 1, to: tomorrowStart)
         else { return .empty }
 
-        let rows = try await fetchJobs(from: todayStart, before: tomorrowEnd)
+        // Five working days, Monday to Friday, starting today when today is
+        // one. The same rows give today and tomorrow.
+        var days: [Date] = []
+        var cursor = todayStart
+        while days.count < Self.workingDaysShown {
+            if !cal.isDateInWeekend(cursor) { days.append(cursor) }
+            cursor = cal.date(byAdding: .day, value: 1, to: cursor)!
+        }
+        let fetchEnd = max(tomorrowEnd, cal.date(byAdding: .day, value: 1, to: days.last!)!)
+
+        let rows = try await fetchJobs(from: todayStart, before: fetchEnd)
+        var jobsByDay: [Date: [DispatchJob]] = [:]
 
         var dueToday = 0
         var dueTomorrow = 0
@@ -126,7 +197,7 @@ final class DashboardService {
             guard let dueDate = row.parsedDueDate else { continue }
             let dayStart = cal.startOfDay(for: dueDate)
 
-            let isToday    = dayStart >= todayStart && dayStart < tomorrowStart
+            let isToday    = dayStart >= todayStart && dayStart < todayEnd
             let isTomorrow = dayStart >= tomorrowStart && dayStart < tomorrowEnd
 
             let method = row.shippingMethod ?? "Other"
@@ -140,6 +211,8 @@ final class DashboardService {
                 shippingMethod: method,
                 stage: DispatchStage(step: row.workflowStep, status: row.workflowStatus)
             )
+
+            jobsByDay[dayStart, default: []].append(job)
 
             if isToday {
                 dueToday += 1
@@ -191,7 +264,8 @@ final class DashboardService {
             courierGroups: courierGroups,
             inHouseJobs: inHouseJobs,
             todayJobs: allTodayJobs,
-            tomorrowJobs: allTomorrowJobs
+            tomorrowJobs: allTomorrowJobs,
+            workingDays: days.map { DayLoad(date: $0, jobs: jobsByDay[$0] ?? []) }
         )
     }
 
@@ -237,6 +311,10 @@ final class DashboardService {
     private static let isoDateFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withFullDate]
+        // London, not the default UTC. In summer time London's midnight is
+        // 23:00 UTC the day before, so the query asked for yesterday and
+        // today and never fetched tomorrow's jobs.
+        f.timeZone = TimeZone(identifier: "Europe/London")
         return f
     }()
 }
@@ -354,4 +432,45 @@ enum DashboardError: LocalizedError {
 
 private extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
+// MARK: - Today's last figures, kept on the device
+//
+// So Today opens showing the figures from the last time it loaded rather
+// than dashes, while fresh ones come in. Only ever the same London day:
+// yesterday's "due today" is not today's.
+
+struct SameDayCache<Value: Codable> {
+    let name: String
+
+    private struct Stored: Codable {
+        let day: String
+        let savedAt: Date
+        let value: Value
+    }
+
+    private var url: URL? {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("today-\(name).json")
+    }
+
+    private static var today: String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "Europe/London")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: .now)
+    }
+
+    func load() -> (value: Value, savedAt: Date)? {
+        guard let url, let data = try? Data(contentsOf: url),
+              let stored = try? JSONDecoder().decode(Stored.self, from: data),
+              stored.day == Self.today else { return nil }
+        return (stored.value, stored.savedAt)
+    }
+
+    func save(_ value: Value) {
+        guard let url, let data = try? JSONEncoder().encode(Stored(day: Self.today, savedAt: .now, value: value)) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
 }

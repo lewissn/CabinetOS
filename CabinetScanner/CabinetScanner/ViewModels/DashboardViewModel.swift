@@ -9,20 +9,23 @@ enum TileDetail: Identifiable {
     case dueToday
     case dueTomorrow
     case courierGroup(CourierGroup)
+    case day(DayLoad)
 
     var id: String {
         switch self {
         case .dueToday:              return "dueToday"
         case .dueTomorrow:           return "dueTomorrow"
         case .courierGroup(let g):   return "courier-\(g.shippingMethod)"
+        case .day(let d):            return "day-\(d.date.timeIntervalSince1970)"
         }
     }
 
     var title: String {
         switch self {
         case .dueToday:              return "Due Today"
-        case .dueTomorrow:           return "Due Tomorrow"
+        case .dueTomorrow:           return WorkingDay.dueLabel()
         case .courierGroup(let g):   return g.shippingMethod
+        case .day:                   return "Due"
         }
     }
 
@@ -31,6 +34,7 @@ enum TileDetail: Identifiable {
         case .dueToday:      return .blue
         case .dueTomorrow:   return .orange
         case .courierGroup:  return .blue
+        case .day:           return .blue
         }
     }
 }
@@ -49,6 +53,18 @@ final class DashboardViewModel: ObservableObject {
     @Published var selectedTile: TileDetail?
 
     private let service = DashboardService()
+    private let cache = SameDayCache<DispatchIntelligence>(name: "dispatch")
+    /// When the figures on screen were fetched, if they came from the device.
+    private(set) var cachedAt: Date?
+
+    init() {
+        // Open on the last figures from today, then refresh over them.
+        if let cached = cache.load() {
+            intelligence = cached.value
+            cachedAt = cached.savedAt
+            state = .loaded
+        }
+    }
 
     var greeting: String {
         let hour = Calendar.london.component(.hour, from: Date())
@@ -71,6 +87,7 @@ final class DashboardViewModel: ObservableObject {
         do {
             intelligence = try await service.fetchIntelligence()
             state = .loaded
+            cache.save(intelligence)
         } catch {
             state = .error(error.localizedDescription)
         }
@@ -96,9 +113,12 @@ final class DashboardViewModel: ObservableObject {
                 result.append(GroupedSection(title: "Due Today", jobs: group.todayJobs.sorted { ($0.stage, $0.customer) < ($1.stage, $1.customer) }))
             }
             if !group.tomorrowJobs.isEmpty {
-                result.append(GroupedSection(title: "Due Tomorrow", jobs: group.tomorrowJobs.sorted { ($0.stage, $0.customer) < ($1.stage, $1.customer) }))
+                result.append(GroupedSection(title: WorkingDay.dueLabel(), jobs: group.tomorrowJobs.sorted { ($0.stage, $0.customer) < ($1.stage, $1.customer) }))
             }
             return result
+
+        case .day(let day):
+            return groupedByMethod(day.jobs)
         }
     }
 

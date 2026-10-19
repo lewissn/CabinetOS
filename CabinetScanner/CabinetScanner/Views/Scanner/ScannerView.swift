@@ -1,6 +1,31 @@
 import CabinetDesign
 import SwiftUI
 
+/// The scanner, owning its view model.
+///
+/// Built once when the scanner opens. It used to be created inline in the box
+/// screen's cover and only observed, so each time the box screen redrew under
+/// it (it polls for changes) SwiftUI could hand the scanner a new, empty model
+/// mid-scan.
+struct ScannerScreen: View {
+    @StateObject private var viewModel: ScannerViewModel
+    let onDismiss: () -> Void
+
+    init(boxId: String, manifestId: String, consignmentId: String, appState: AppState,
+         expectedProjectName: String?, onDismiss: @escaping () -> Void) {
+        _viewModel = StateObject(wrappedValue: ScannerViewModel(
+            boxId: boxId,
+            manifestId: manifestId,
+            consignmentId: consignmentId,
+            appState: appState,
+            expectedProjectName: expectedProjectName
+        ))
+        self.onDismiss = onDismiss
+    }
+
+    var body: some View { ScannerView(viewModel: viewModel, onDismiss: onDismiss) }
+}
+
 /// The full-screen scanner over a box. The camera, the assembler and the
 /// view model's states and timing are as they were; this is the frame
 /// around them: corners that take the result's colour, and the result band.

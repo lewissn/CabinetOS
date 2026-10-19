@@ -14,11 +14,20 @@ import SwiftUI
 
 struct JobSearchResults: View {
     @ObservedObject var viewModel: JobSearchViewModel
+    @EnvironmentObject private var router: AppRouter
 
     var body: some View {
         if let error = viewModel.errorMessage {
-            PaperEmptyState("Search isn't available", message: error, actionTitle: "Try again") {
-                viewModel.retry()
+            // A missing or refused token is fixed in Settings, so that's
+            // where the button goes; "Try again" would fail the same way.
+            if viewModel.errorNeedsSettings {
+                PaperEmptyState("Search needs this device's access token", message: error, actionTitle: "Open Settings") {
+                    router.selectedTab = .settings
+                }
+            } else {
+                PaperEmptyState("Search isn't available", message: error, actionTitle: "Try again") {
+                    viewModel.retry()
+                }
             }
 
         } else if viewModel.isQueryTooShort {
