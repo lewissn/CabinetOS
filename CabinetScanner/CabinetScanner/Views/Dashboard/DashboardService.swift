@@ -153,6 +153,16 @@ final class DashboardService {
 
     static let workingDaysShown = 5
 
+    /// The ShopVOX workflow groups of a job that is going out: from the
+    /// office's scheduling through production to packing. Not Design (the
+    /// customer hasn't approved the proof) and not a job with no group.
+    ///
+    /// It used to be Production and Post-Production only, which suits "what
+    /// leaves today" but hid most of a later day: on 19 Oct 2026, 18 of
+    /// Friday's 20 jobs were still in Office (Scheduled, Tooling check), so
+    /// Today said 2 were due out on Friday.
+    static let committedGroups = "Office,Pre-Production,Production,Post-Production"
+
     private static let inHouseKeywords = ["in-house", "in house", "inhouse"]
 
     static func isInHouse(_ method: String?) -> Bool {
@@ -279,7 +289,7 @@ final class DashboardService {
             + "?select=id,due_raw,customer,sales_order,shipping_method,workflow_step,workflow_status"
             + "&due_raw=gte.\(startString)"
             + "&due_raw=lt.\(endString)"
-            + "&workflow_group=in.(Post-Production,Production)"
+            + "&workflow_group=in.(\(Self.committedGroups))"
             + "&order=due_raw.asc,customer.asc"
 
         guard let url = URL(string: urlString) else { throw DashboardError.badURL }
