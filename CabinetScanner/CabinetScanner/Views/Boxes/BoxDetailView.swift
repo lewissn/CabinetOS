@@ -177,14 +177,12 @@ struct BoxDetailView: View {
             .paperSheet()
         }
         .fullScreenCover(isPresented: $showScanner) {
-            ScannerView(
-                viewModel: ScannerViewModel(
-                    boxId: viewModel.box.id,
-                    manifestId: viewModel.manifestId,
-                    consignmentId: viewModel.consignmentId,
-                    appState: appState,
-                    expectedProjectName: viewModel.projectName
-                ),
+            ScannerScreen(
+                boxId: viewModel.box.id,
+                manifestId: viewModel.manifestId,
+                consignmentId: viewModel.consignmentId,
+                appState: appState,
+                expectedProjectName: viewModel.projectName,
                 onDismiss: {
                     showScanner = false
                     Task { await viewModel.loadBoxDetail() }

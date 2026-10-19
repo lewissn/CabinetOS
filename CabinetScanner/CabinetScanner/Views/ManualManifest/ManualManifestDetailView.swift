@@ -86,13 +86,11 @@ struct ManualManifestDetailView: View {
             }
         }
         .navigationDestination(for: ManualManifestBox.self) { box in
-            ManualBoxDetailView(
-                viewModel: ManualBoxDetailViewModel(
-                    box: box,
-                    manifestName: viewModel.manifest.manifestName,
-                    courierName: viewModel.manifest.courier,
-                    isManifestFinished: viewModel.manifest.isFinished
-                )
+            ManualBoxScreen(
+                box: box,
+                manifestName: viewModel.manifest.manifestName,
+                courierName: viewModel.manifest.courier,
+                isManifestFinished: viewModel.manifest.isFinished
             )
         }
         .alert(boxToDelete.map { "Delete box \($0.boxNumber)?" } ?? "Delete box?", isPresented: .init(
@@ -250,6 +248,30 @@ struct ManualManifestDetailView: View {
             }
         }
     }
+}
+
+// MARK: - A box's screen, owning its model
+//
+// The box's view model has to be owned here, as a StateObject. It used to be
+// built inline in the destination above and only observed, so whenever this
+// screen redrew behind the box (its own box list finishing a refresh, say)
+// SwiftUI built a fresh, empty model and the box screen kept that one: the
+// items it had loaded vanished and every box read "Nothing was put in this
+// box", though the scans were all there.
+
+struct ManualBoxScreen: View {
+    @StateObject private var viewModel: ManualBoxDetailViewModel
+
+    init(box: ManualManifestBox, manifestName: String, courierName: String?, isManifestFinished: Bool) {
+        _viewModel = StateObject(wrappedValue: ManualBoxDetailViewModel(
+            box: box,
+            manifestName: manifestName,
+            courierName: courierName,
+            isManifestFinished: isManifestFinished
+        ))
+    }
+
+    var body: some View { ManualBoxDetailView(viewModel: viewModel) }
 }
 
 // MARK: - What ShopVOX did
