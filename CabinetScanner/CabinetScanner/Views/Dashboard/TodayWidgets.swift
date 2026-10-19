@@ -5,8 +5,8 @@ import SwiftUI
 //
 // One screen, no scrolling: a single focal ring for the day that matters,
 // three quiet figures, the week's rhythm, and at most one line of news.
-// Amber is the brand and means progress; ember (brick red) is kept for the
-// few things that need attention. Everything is drawn from the dispatch
+// Green is what's packed; amber marks where you are; ember (brick red) is
+// kept for the few things that need attention. Everything is drawn from the dispatch
 // query; before it loads, figures read "–".
 //
 // Motion is part of reading it: the ring draws in, numbers roll when they
@@ -68,7 +68,7 @@ struct FocusRing: View {
                 Circle().stroke(PaperColor.track, lineWidth: 3)
                 Circle()
                     .trim(from: 0, to: max(0, min(1, revealed ? fraction : 0)))
-                    .stroke(PaperColor.accent, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                    .stroke(PaperColor.success, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .animation(reduceMotion ? nil : .spring(response: 1.1, dampingFraction: 0.9), value: revealed ? fraction : 0)
 
@@ -251,7 +251,7 @@ private struct APCCutoff {
 
 // MARK: The week's rhythm
 
-/// Jobs due on each of the next five working days: a slim bar per day, amber
+/// Jobs due on each of the next five working days: a slim bar per day, green
 /// for what's packed, the track for the rest. The ring's day is marked.
 struct WeekRhythm: View {
     let days: [DayLoad]
@@ -307,7 +307,7 @@ struct WeekRhythm: View {
                     .frame(width: barWidth, height: height)
                     .overlay(alignment: .bottom) {
                         Rectangle()
-                            .fill(PaperColor.accent)
+                            .fill(PaperColor.success)
                             .frame(height: height * readyShare)
                     }
                     .clipShape(Capsule())

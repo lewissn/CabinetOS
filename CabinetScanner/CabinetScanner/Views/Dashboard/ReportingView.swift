@@ -72,7 +72,7 @@ struct ReportingView: View {
                 Circle().stroke(PaperColor.track, lineWidth: 3)
                 Circle()
                     .trim(from: 0, to: max(0, min(1, fraction)))
-                    .stroke(PaperColor.accent, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                    .stroke(PaperColor.success, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .animation(.spring(response: 1.0, dampingFraction: 0.9), value: fraction)
                 VStack(spacing: 2) {
