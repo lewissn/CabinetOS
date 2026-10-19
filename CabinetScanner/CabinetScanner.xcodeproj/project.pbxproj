@@ -108,6 +108,7 @@
 		D3523148D1000759D7B553B2 /* JobLabelScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F62664C6E48BF78997C672 /* JobLabelScannerView.swift */; };
 		D330999E3A34C58C1BA87C8B /* TodayWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D333D675129A9CD397E2410D /* TodayWidgets.swift */; };
 		D37BC279675E3DE861D967F9 /* Moments.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3FE2EA61D8E5EDF5DEF67A3 /* Moments.swift */; };
+		D35D7E8446744DFC6D31FD3B /* ScanToPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3486696AE01BC21A09001C2 /* ScanToPack.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -212,6 +213,7 @@
 		D3F62664C6E48BF78997C672 /* JobLabelScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobLabelScannerView.swift; sourceTree = "<group>"; };
 		D333D675129A9CD397E2410D /* TodayWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayWidgets.swift; sourceTree = "<group>"; };
 		D3FE2EA61D8E5EDF5DEF67A3 /* Moments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moments.swift; sourceTree = "<group>"; };
+		D3486696AE01BC21A09001C2 /* ScanToPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanToPack.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -401,6 +403,7 @@
 			children = (
 				B1000000000000000000001F /* ManifestListView.swift */,
 				B10000000000000000000037 /* PackagingHomeView.swift */,
+				D3486696AE01BC21A09001C2 /* ScanToPack.swift */,
 			);
 			path = Manifests;
 			sourceTree = "<group>";
@@ -576,6 +579,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D35D7E8446744DFC6D31FD3B /* ScanToPack.swift in Sources */,
 				D37BC279675E3DE861D967F9 /* Moments.swift in Sources */,
 				D330999E3A34C58C1BA87C8B /* TodayWidgets.swift in Sources */,
 				D3523148D1000759D7B553B2 /* JobLabelScannerView.swift in Sources */,

@@ -9,7 +9,7 @@ import SwiftUI
 // (https://ops…/jobs/<id>, cabinetscanner://job/<id>) and "job:9731" work too.
 
 /// What a job label's QR code points at.
-enum JobLabelTarget: Equatable {
+enum JobLabelTarget: Hashable {
     case jobId(String)
     case salesOrder(String)
 

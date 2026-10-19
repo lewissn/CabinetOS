@@ -14,14 +14,20 @@ struct PackagingHomeView: View {
     @StateObject private var courier = ManualManifestListViewModel()
     @EnvironmentObject var appState: AppState
     @State private var resumeTarget: ResumeTarget?
+    @State private var scanningLabel = false
+    @State private var packTarget: JobLabelTarget?
     @AppStorage("packing.mode") private var mode: PackagingSection = .bjs
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 ScreenTitle("Packing") {
-                    BarIcon(glyph: .station, label: "Station setup") {
-                        appState.isStationConfigured = false
+                    HStack(spacing: PaperSpace.xs) {
+                        // Scan to pack: a job label straight to its boxes.
+                        BarIcon(glyph: .qr, label: "Scan a job label to pack it") { scanningLabel = true }
+                        BarIcon(glyph: .station, label: "Station setup") {
+                            appState.isStationConfigured = false
+                        }
                     }
                 }
                 stationLine
@@ -60,6 +66,27 @@ struct PackagingHomeView: View {
         }
         .navigationDestination(for: ManualManifest.self) { manifest in
             ManualManifestScreen(manifest: manifest)
+        }
+        .navigationDestination(item: $packTarget) { target in
+            PackJobScreen(target: target)
+        }
+        #if DEBUG
+        // Debug builds: launch with `-debugPackSO 9744` to open scan to pack
+        // as if that label had been scanned (the simulator has no camera).
+        .onAppear {
+            if packTarget == nil, let so = UserDefaults.standard.string(forKey: "debugPackSO") {
+                packTarget = .salesOrder(so)
+            }
+        }
+        #endif
+        .fullScreenCover(isPresented: $scanningLabel) {
+            JobLabelScannerView(
+                onFound: { target in
+                    scanningLabel = false
+                    packTarget = target
+                },
+                onCancel: { scanningLabel = false }
+            )
         }
         .navigationDestination(item: $resumeTarget) { target in
             BoxDetailView(
