@@ -75,7 +75,7 @@ struct ProductionBoard: View {
         case .overdue:           return "No orders are past their due date."
         case .thisWeek:          return "No orders are due this week."
         case .today:             return "No orders are due today."
-        case .tomorrow:          return "No orders are due tomorrow."
+        case .tomorrow:          return "No orders are \(WorkingDay.dueLabel().lowercasedFirst)."
         case .nextWeek:          return "No orders are due next week."
         case .upcoming:          return "No orders are due in the next four weeks."
         case .yesterday:         return "No orders were due yesterday."

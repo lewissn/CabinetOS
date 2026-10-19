@@ -86,7 +86,8 @@ extension ProductionDateView {
         case .overdue: "Overdue"
         case .thisWeek: "This week"
         case .today: "Today"
-        case .tomorrow: "Tomorrow"
+        // The next working day, as Ops now counts it: "Monday" on a Friday.
+        case .tomorrow: WorkingDay.name()
         case .nextWeek: "Next week"
         case .upcoming: "Upcoming"
         case .yesterday: "Yesterday"

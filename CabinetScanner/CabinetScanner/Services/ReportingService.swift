@@ -8,6 +8,17 @@ import Foundation
 final class ReportingService {
 
     func fetchReport(for period: ReportingPeriod, deviceId: String) async throws -> ReportingSummary {
+        // All Time is worked out by Ops, beside the database. Anything short
+        // of an answer from it (no token on this device, a server from before
+        // the route, no signal) falls back to working it out here as before.
+        if period == .allTime, Configuration.hasDeviceAPIToken,
+           let summary = try? await JobIndexService().reportSummary(period: period, deviceId: deviceId) {
+            return summary
+        }
+        return try await computeReport(for: period, deviceId: deviceId)
+    }
+
+    private func computeReport(for period: ReportingPeriod, deviceId: String) async throws -> ReportingSummary {
         let (start, end) = period.dateRange()
         let startISO = Self.isoFormatter.string(from: start)
         let endISO = Self.isoFormatter.string(from: end)
