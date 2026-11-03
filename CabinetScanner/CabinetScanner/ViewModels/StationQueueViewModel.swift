@@ -18,9 +18,13 @@ struct StepTapIds {
         return id
     }
 
-    /// The server answered, so the tap is settled either way.
-    mutating func settled(step stepId: String, action: StepActionKind) {
-        held["\(stepId)|\(action.rawValue)"] = nil
+    /// The server answered, so the tap is settled either way, unless the answer
+    /// is that it's still being sent. A refusal is settled: the server replays
+    /// the outcome of an id it has seen, so tapping again with this one would
+    /// only repeat the refusal.
+    mutating func answered(_ response: StepActionResponse, step stepId: String, action: StepActionKind) {
+        let stillSending = !response.ok && response.duplicate == true && response.reason != "shopvox_refused"
+        if !stillSending { held["\(stepId)|\(action.rawValue)"] = nil }
     }
 }
 
@@ -84,7 +88,7 @@ final class StationQueueViewModel: ObservableObject {
             let response = try await service.performStepAction(
                 jobId: job.jobId, stepId: stepId, action: action, requestId: requestId
             )
-            tapIds.settled(step: stepId, action: action)
+            tapIds.answered(response, step: stepId, action: action)
             if response.ok {
                 HapticService.success()
                 outcome = StepActionOutcome(

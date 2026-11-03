@@ -109,7 +109,7 @@ final class FittingKitViewModel: ObservableObject {
         let requestId = tapIds.id(forStep: stepId, action: action, state: step.state)
         do {
             let response = try await service.performStepAction(jobId: jobId, stepId: stepId, action: action, requestId: requestId)
-            tapIds.settled(step: stepId, action: action)
+            tapIds.answered(response, step: stepId, action: action)
             if response.ok {
                 HapticService.success()
                 outcome = StepActionOutcome(isSuccess: true, message: successMessage(action, response), isConfirmed: response.confirmed ?? false)

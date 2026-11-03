@@ -140,7 +140,7 @@ final class JobDetailViewModel: ObservableObject {
 
     /// One id per tap, held so a retry of the SAME tap reuses it and the
     /// server recognises the repeat instead of moving the step twice.
-    private var requestIds: [String: String] = [:]
+    private var tapIds = StepTapIds()
 
     init(jobId: String, service: JobIndexService = JobIndexService()) {
         self.jobId = jobId
@@ -158,7 +158,7 @@ final class JobDetailViewModel: ObservableObject {
             detail = nil
             actionResult = nil
             stepInFlight = nil
-            requestIds.removeAll()
+            tapIds = StepTapIds()
         }
 
         isLoading = true
@@ -196,9 +196,7 @@ final class JobDetailViewModel: ObservableObject {
 
         // Reuse the id for a retry of this same tap; a genuinely new tap gets
         // a new one so it is not mistaken for a repeat.
-        let key = "\(step.id)|\(action.rawValue)"
-        let requestId = requestIds[key] ?? UUID().uuidString
-        requestIds[key] = requestId
+        let requestId = tapIds.id(forStep: stepId, action: action, state: step.state)
 
         do {
             let response = try await service.performStepAction(
@@ -207,9 +205,9 @@ final class JobDetailViewModel: ObservableObject {
                 action: action,
                 requestId: requestId
             )
+            tapIds.answered(response, step: stepId, action: action)
 
             if response.ok {
-                requestIds[key] = nil
                 actionResult = StepActionOutcome(
                     isSuccess: true,
                     message: successMessage(for: action, response: response, step: step),
