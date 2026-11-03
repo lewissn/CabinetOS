@@ -118,6 +118,8 @@ struct JobDetailView: View {
 
             proofSection(detail.proof).section()
 
+            FittingKitSection(jobId: jobId, jobTitle: detail.customer.name ?? knownTitle).section()
+
             if !detail.dates.isEmpty { datesSection(detail.dates).section() }
 
             if let items = detail.lineItems, !items.isEmpty { lineItemsSection(items).section() }
@@ -558,7 +560,7 @@ private struct StepRow: View {
 /// Three states, not two. A success ShopVOX confirmed reads as done; a success
 /// it accepted but we could not read back says exactly that, because claiming
 /// a state we have not seen is how an app and ShopVOX quietly disagree.
-private struct StepActionBanner: View {
+struct StepActionBanner: View {
     let result: StepActionOutcome
     let dismiss: () -> Void
 

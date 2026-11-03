@@ -15,7 +15,7 @@ enum AppTab: Int, CaseIterable {
     case dashboard
     case jobs
     case packaging
-    case reports
+    case stations
     case settings
 
     var title: String {
@@ -23,7 +23,7 @@ enum AppTab: Int, CaseIterable {
         case .dashboard: "Today"
         case .jobs: "Jobs"
         case .packaging: "Packing"
-        case .reports: "Reports"
+        case .stations: "Stations"
         case .settings: "Settings"
         }
     }
@@ -33,7 +33,7 @@ enum AppTab: Int, CaseIterable {
         case .dashboard: .today
         case .jobs: .job
         case .packaging: .box
-        case .reports: .trend
+        case .stations: .station
         case .settings: .settings
         }
     }
@@ -58,14 +58,14 @@ struct MainTabView: View {
         VStack(spacing: 0) {
             ZStack {
                 tabContent(.dashboard) {
-                    DashboardView(switchToPackaging: { router.selectedTab = .packaging },
-                              switchToReports: { router.selectedTab = .reports })
+                    DashboardView(switchToPackaging: { router.selectedTab = .packaging })
                 }
                 tabContent(.jobs) { JobsHubView() }
                 tabContent(.packaging) { packagingTab }
                 // Stock was hidden on 18 Oct 2026: nobody used it. StockView is
                 // still in the project; put a tab back here to restore it.
-                tabContent(.reports) { ReportingView() }
+                // Reports moved to a link on Today to make room for Stations.
+                tabContent(.stations) { StationsView() }
                 tabContent(.settings) { SettingsPlaceholderView() }
             }
             .overlay(alignment: .bottom) {
@@ -253,8 +253,8 @@ private struct LabelPrinterSection: View {
 
 // MARK: - Device access token
 //
-// Job search, the production board and despatch notifications are behind
-// authentication; the older despatch endpoints are not. The token is entered
+// Job search, stations, fitting kits and despatch notifications are behind
+// authentication; the older despatch endpoints are not yet. The token is entered
 // once per device so nobody has to sign in mid-shift, and is held in the
 // Keychain rather than compiled in — a baked-in token ships to every device
 // and cannot be revoked singly.
@@ -282,7 +282,7 @@ private struct DeviceTokenSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PaperSectionHeader("Job search access") {
+            PaperSectionHeader("Device access") {
                 StatusText(status.0, tone: status.1)
             }
 
@@ -365,7 +365,7 @@ private struct DeviceTokenSection: View {
                 .padding(.top, PaperSpace.s)
             }
 
-            Text("Needed for Jobs, the production board and despatch alerts. Packing works without it. Either the whole \"name:token\" line or just the token will do.")
+            Text("Needed for Jobs, Stations, fitting kits and despatch alerts. Packing works without it for now. Either the whole \"name:token\" line or just the token will do.")
                 .paperType(.footnote)
                 .foregroundStyle(PaperColor.tertiary)
                 .fixedSize(horizontal: false, vertical: true)

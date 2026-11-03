@@ -163,6 +163,7 @@ final class LiveAPIService: APIServiceProtocol {
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
         req.setValue("application/json", forHTTPHeaderField: "Accept")
+        authorise(&req)
         return try await sendWithRetry(req, allowsRetry: true)
     }
 
@@ -175,6 +176,7 @@ final class LiveAPIService: APIServiceProtocol {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.httpBody = try encoder.encode(body)
+        authorise(&req)
         // Retry POSTs on transient errors only — the scan-batch endpoint is
         // idempotent on (panel_uid) so duplicate inserts collapse harmlessly,
         // and the legacy /scan endpoint catches duplicates server-side.
@@ -217,8 +219,18 @@ final class LiveAPIService: APIServiceProtocol {
         }
         var req = URLRequest(url: url)
         req.httpMethod = "DELETE"
+        authorise(&req)
         let (_, response) = try await session.data(for: req)
         try validateResponse(response, data: nil)
+    }
+
+    /// Sends the device token when there is one. Unlike the job index, these
+    /// calls still go out without one: the server leaves the despatch routes
+    /// open until SCANNER_ROUTES_REQUIRE_AUTH is set, and packing has to keep
+    /// working on a device that hasn't been given a token yet.
+    private func authorise(_ req: inout URLRequest) {
+        guard let token = Configuration.deviceAPIToken, !token.isEmpty else { return }
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     }
 
     private func validateResponse(_ response: URLResponse, data: Data?) throws {

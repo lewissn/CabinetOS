@@ -92,7 +92,7 @@
 		A10000000000000000000064 /* ProvenanceBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000064 /* ProvenanceBadge.swift */; };
 		A10000000000000000000065 /* JobSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000065 /* JobSearchView.swift */; };
 		A10000000000000000000066 /* JobDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000066 /* JobDetailView.swift */; };
-		A10000000000000000000067 /* ProductionBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000067 /* ProductionBoardView.swift */; };
+		A10000000000000000000067 /* DueDatesBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000067 /* DueDatesBoardView.swift */; };
 		A10000000000000000000068 /* JobsHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000068 /* JobsHubView.swift */; };
 		A10000000000000000000069 /* ProofViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000069 /* ProofViewerView.swift */; };
 		D38EF451334A1BFE8286EE6C /* DesignShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3ABB6FDA8953570BA322B06 /* DesignShared.swift */; };
@@ -109,6 +109,15 @@
 		D330999E3A34C58C1BA87C8B /* TodayWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D333D675129A9CD397E2410D /* TodayWidgets.swift */; };
 		D37BC279675E3DE861D967F9 /* Moments.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3FE2EA61D8E5EDF5DEF67A3 /* Moments.swift */; };
 		D35D7E8446744DFC6D31FD3B /* ScanToPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3486696AE01BC21A09001C2 /* ScanToPack.swift */; };
+		26B2FE945FFD5F9EB38F1CF3 /* FittingKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2CDF099813155CCEB1BB756 /* FittingKit.swift */; };
+		8CB945536D8798C79987A1BB /* Station.swift in Sources */ = {isa = PBXBuildFile; fileRef = A842087955ECFC6125F61E68 /* Station.swift */; };
+		1A93709510392A3D9054DBCD /* CuttingBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE6E6942A4B5D431E7EADE44 /* CuttingBoard.swift */; };
+		54D623D32AEC9FA5678041AC /* KitPickQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = D443CCAA1834D1E349DF1FE5 /* KitPickQueue.swift */; };
+		0C6EEC6F57530F44236F3FEA /* StationQueueViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1571A267C6B2A587FFEE2568 /* StationQueueViewModel.swift */; };
+		9E3ABAB023020D5E2937B527 /* FittingKitViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C0EB85D5FB5D4CAD21234E5 /* FittingKitViewModel.swift */; };
+		FCB6708005BD506C49CD3F16 /* StationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B941F89D2A64AE21E76EFF98 /* StationsView.swift */; };
+		5CC276D7B6D6CFD562AF3F12 /* FittingKitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 440FD224EC115C326FBE4CDD /* FittingKitView.swift */; };
+		20D8EA70829EA27D30EDFFF0 /* CuttingBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C99C57C374F6A1D1D52111CA /* CuttingBoardView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -196,7 +205,7 @@
 		B10000000000000000000064 /* ProvenanceBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvenanceBadge.swift; sourceTree = "<group>"; };
 		B10000000000000000000065 /* JobSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobSearchView.swift; sourceTree = "<group>"; };
 		B10000000000000000000066 /* JobDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobDetailView.swift; sourceTree = "<group>"; };
-		B10000000000000000000067 /* ProductionBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionBoardView.swift; sourceTree = "<group>"; };
+		B10000000000000000000067 /* DueDatesBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DueDatesBoardView.swift; sourceTree = "<group>"; };
 		B10000000000000000000068 /* JobsHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobsHubView.swift; sourceTree = "<group>"; };
 		B10000000000000000000069 /* ProofViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProofViewerView.swift; sourceTree = "<group>"; };
 		C10000000000000000000001 /* CabinetScanner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CabinetScanner.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -214,6 +223,15 @@
 		D333D675129A9CD397E2410D /* TodayWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayWidgets.swift; sourceTree = "<group>"; };
 		D3FE2EA61D8E5EDF5DEF67A3 /* Moments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moments.swift; sourceTree = "<group>"; };
 		D3486696AE01BC21A09001C2 /* ScanToPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanToPack.swift; sourceTree = "<group>"; };
+		F2CDF099813155CCEB1BB756 /* FittingKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FittingKit.swift; sourceTree = "<group>"; };
+		A842087955ECFC6125F61E68 /* Station.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Station.swift; sourceTree = "<group>"; };
+		FE6E6942A4B5D431E7EADE44 /* CuttingBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CuttingBoard.swift; sourceTree = "<group>"; };
+		D443CCAA1834D1E349DF1FE5 /* KitPickQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitPickQueue.swift; sourceTree = "<group>"; };
+		1571A267C6B2A587FFEE2568 /* StationQueueViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationQueueViewModel.swift; sourceTree = "<group>"; };
+		1C0EB85D5FB5D4CAD21234E5 /* FittingKitViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FittingKitViewModel.swift; sourceTree = "<group>"; };
+		B941F89D2A64AE21E76EFF98 /* StationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationsView.swift; sourceTree = "<group>"; };
+		440FD224EC115C326FBE4CDD /* FittingKitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FittingKitView.swift; sourceTree = "<group>"; };
+		C99C57C374F6A1D1D52111CA /* CuttingBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CuttingBoardView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -281,6 +299,9 @@
 		E10000000000000000000005 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				FE6E6942A4B5D431E7EADE44 /* CuttingBoard.swift */,
+				A842087955ECFC6125F61E68 /* Station.swift */,
+				F2CDF099813155CCEB1BB756 /* FittingKit.swift */,
 				B10000000000000000000025 /* AppNotification.swift */,
 				B10000000000000000000061 /* JobIndex.swift */,
 				E10000000000000000000011 /* Cache */,
@@ -300,6 +321,7 @@
 		E10000000000000000000006 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				D443CCAA1834D1E349DF1FE5 /* KitPickQueue.swift */,
 				B10000000000000000000026 /* NotificationService.swift */,
 				B10000000000000000000024 /* DeviceTokenStore.swift */,
 				B10000000000000000000062 /* JobIndexService.swift */,
@@ -330,6 +352,8 @@
 		E10000000000000000000007 /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
+				1C0EB85D5FB5D4CAD21234E5 /* FittingKitViewModel.swift */,
+				1571A267C6B2A587FFEE2568 /* StationQueueViewModel.swift */,
 				B10000000000000000000063 /* JobSearchViewModel.swift */,
 				B10000000000000000000042 /* APCDeadlineViewModel.swift */,
 				B10000000000000000000013 /* BoxDetailViewModel.swift */,
@@ -348,6 +372,8 @@
 		E10000000000000000000008 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				1CE2DF9E15CE371E9B0E3C30 /* Kit */,
+				32A7FA2E8DD2DC20602EDFCB /* Stations */,
 				1D6DA56A2F4F5DDE00DEE6A8 /* Stock */,
 				E10000000000000000000009 /* Boxes */,
 				E1000000000000000000000A /* Components */,
@@ -474,12 +500,13 @@
 		E10000000000000000000013 /* Jobs */ = {
 			isa = PBXGroup;
 			children = (
+				C99C57C374F6A1D1D52111CA /* CuttingBoardView.swift */,
 				B1000000000000000000002D /* JobConsignmentSection.swift */,
 				B10000000000000000000069 /* ProofViewerView.swift */,
 				B10000000000000000000068 /* JobsHubView.swift */,
 				B10000000000000000000065 /* JobSearchView.swift */,
 				B10000000000000000000066 /* JobDetailView.swift */,
-				B10000000000000000000067 /* ProductionBoardView.swift */,
+				B10000000000000000000067 /* DueDatesBoardView.swift */,
 				D3AB64AA893F607BB813E9A7 /* StepTrack.swift */,
 				D387D81D346D5D189A7E9A8A /* JobLookupView.swift */,
 			);
@@ -502,6 +529,22 @@
 				D3E579059DAC4EABC4A56A9A /* ModelPresentation.swift */,
 			);
 			path = Design;
+			sourceTree = "<group>";
+		};
+		32A7FA2E8DD2DC20602EDFCB /* Stations */ = {
+			isa = PBXGroup;
+			children = (
+				B941F89D2A64AE21E76EFF98 /* StationsView.swift */,
+			);
+			path = Stations;
+			sourceTree = "<group>";
+		};
+		1CE2DF9E15CE371E9B0E3C30 /* Kit */ = {
+			isa = PBXGroup;
+			children = (
+				440FD224EC115C326FBE4CDD /* FittingKitView.swift */,
+			);
+			path = Kit;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -579,6 +622,15 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				20D8EA70829EA27D30EDFFF0 /* CuttingBoardView.swift in Sources */,
+				5CC276D7B6D6CFD562AF3F12 /* FittingKitView.swift in Sources */,
+				FCB6708005BD506C49CD3F16 /* StationsView.swift in Sources */,
+				9E3ABAB023020D5E2937B527 /* FittingKitViewModel.swift in Sources */,
+				0C6EEC6F57530F44236F3FEA /* StationQueueViewModel.swift in Sources */,
+				54D623D32AEC9FA5678041AC /* KitPickQueue.swift in Sources */,
+				1A93709510392A3D9054DBCD /* CuttingBoard.swift in Sources */,
+				8CB945536D8798C79987A1BB /* Station.swift in Sources */,
+				26B2FE945FFD5F9EB38F1CF3 /* FittingKit.swift in Sources */,
 				D35D7E8446744DFC6D31FD3B /* ScanToPack.swift in Sources */,
 				D37BC279675E3DE861D967F9 /* Moments.swift in Sources */,
 				D330999E3A34C58C1BA87C8B /* TodayWidgets.swift in Sources */,
@@ -609,7 +661,7 @@
 				A10000000000000000000064 /* ProvenanceBadge.swift in Sources */,
 				A10000000000000000000065 /* JobSearchView.swift in Sources */,
 				A10000000000000000000066 /* JobDetailView.swift in Sources */,
-				A10000000000000000000067 /* ProductionBoardView.swift in Sources */,
+				A10000000000000000000067 /* DueDatesBoardView.swift in Sources */,
 				A10000000000000000000001 /* AppState.swift in Sources */,
 				A10000000000000000000002 /* CabinetScannerApp.swift in Sources */,
 				A10000000000000000000003 /* RootView.swift in Sources */,
@@ -814,7 +866,7 @@
 				DEVELOPMENT_TEAM = B54VQ6PV6L;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CabinetScanner/Info.plist;
-				INFOPLIST_KEY_NSCameraUsageDescription = "CabinetScanner needs camera access to scan barcode labels on cabinet parts.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "CabinetScanner needs camera access to scan labels on cabinet parts and to photograph fitting kits.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -842,7 +894,7 @@
 				DEVELOPMENT_TEAM = B54VQ6PV6L;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CabinetScanner/Info.plist;
-				INFOPLIST_KEY_NSCameraUsageDescription = "CabinetScanner needs camera access to scan barcode labels on cabinet parts.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "CabinetScanner needs camera access to scan labels on cabinet parts and to photograph fitting kits.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

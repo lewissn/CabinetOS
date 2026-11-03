@@ -1,7 +1,7 @@
 import CabinetDesign
 import SwiftUI
 
-// MARK: - Production Board
+// MARK: - Due dates
 //
 // Overdue / this week / today / tomorrow / next week / upcoming / yesterday /
 // recent, driven by order due dates. Shown in the Jobs tab whenever the
@@ -11,7 +11,7 @@ import SwiftUI
 // response text, so this screen cannot drift into implying these are confirmed
 // production schedules.
 
-struct ProductionBoard: View {
+struct DueDatesBoard: View {
     @ObservedObject var viewModel: ProductionViewsViewModel
     /// Shipping method to show, or nil for all. Kept per device.
     @AppStorage("board.shippingFilter") private var shippingFilter = ""
@@ -51,7 +51,7 @@ struct ProductionBoard: View {
             .allowsHitTesting(false)
 
         } else if let error = viewModel.errorMessage {
-            PaperEmptyState("The board didn't load", message: error, actionTitle: "Try again") {
+            PaperEmptyState("The due dates didn't load", message: error, actionTitle: "Try again") {
                 Task { await viewModel.load() }
             }
 
@@ -114,7 +114,7 @@ struct ProductionBoard: View {
 
 // MARK: - Shipping filter
 
-extension ProductionBoard {
+extension DueDatesBoard {
     /// "All" and one chip per shipping method in this view, with its count.
     /// A method that isn't in the view just shows everything.
     fileprivate var shippingChips: some View {

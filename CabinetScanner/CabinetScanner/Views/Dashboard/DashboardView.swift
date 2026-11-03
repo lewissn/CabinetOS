@@ -37,7 +37,6 @@ struct DashboardView: View {
     @State private var path = NavigationPath()
     @State private var scanningLabel = false
     var switchToPackaging: () -> Void = {}
-    var switchToReports: () -> Void = {}
 
     /// Typing replaces the dashboard with results, exactly as it does on the
     /// Jobs tab. Looking a job up is the most common reason to pick the iPad
@@ -100,6 +99,9 @@ struct DashboardView: View {
             }
             .navigationDestination(for: SalesOrderLookup.self) { lookup in
                 JobLookupView(salesOrder: lookup.salesOrder, customer: "Sales order \(lookup.salesOrder)")
+            }
+            .navigationDestination(for: ReportsLink.self) { _ in
+                ReportingView()
             }
             .fullScreenCover(isPresented: $scanningLabel) {
                 JobLabelScannerView(
@@ -180,6 +182,8 @@ struct DashboardView: View {
             HStack(alignment: .center) {
                 Text(Format.today()).paperType(.subhead).foregroundStyle(PaperColor.secondary)
                 Spacer()
+                Button("Reports") { path.append(ReportsLink()) }
+                    .buttonStyle(.paperText(PaperColor.ink, .subhead, weight: .medium))
                 // The way through to the full list, carrying the unread count.
                 NotificationBell { showingNotifications = true }
             }
@@ -240,7 +244,7 @@ struct DashboardView: View {
                 boxesThisWeek: week.summary?.completionRates.totalBoxesPacked,
                 onAPC: { vm.selectedTile = .courierGroup($0) },
                 onOtherDay: { vm.selectedTile = focus.isToday ? .dueTomorrow : .dueToday },
-                onWeek: switchToReports
+                onWeek: { path.append(ReportsLink()) }
             )
 
             gap(PaperSpace.l, 52)
