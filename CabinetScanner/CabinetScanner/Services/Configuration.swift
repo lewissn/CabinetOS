@@ -85,9 +85,10 @@ struct Configuration {
 
     // MARK: - Device authorisation
     //
-    // The job-index endpoints require a credential; the older despatch routes
-    // do not (yet). The token is issued per device and entered once at station
-    // setup, so nobody has to log in during a shift.
+    // The job-index endpoints require a credential. The despatch routes send
+    // it too but don't need it until the server closes them. The token is
+    // issued per device and entered once at station setup, so nobody has to
+    // log in during a shift.
     //
     // Deliberately not compiled in: a token baked into the binary is a token
     // that ships to every device and cannot be revoked individually.

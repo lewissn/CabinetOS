@@ -25,6 +25,14 @@ struct CabinetScannerApp: App {
                 await ScanQueueService.shared.flush()
             }
         }
+
+        // Kit ticks waiting from before the app was closed, or from a dropped
+        // connection. Whether or not the offline scan queue is in use.
+        NetworkMonitor.shared.start()
+        NetworkMonitor.shared.onRestore {
+            Task { await KitPickQueue.shared.flushAll() }
+        }
+        Task { await KitPickQueue.shared.flushAll() }
     }
 
     var body: some Scene {
@@ -43,6 +51,7 @@ struct CabinetScannerApp: App {
                 if Configuration.useOfflineQueue {
                     Task { await ScanQueueService.shared.flush() }
                 }
+                Task { await KitPickQueue.shared.flushAll() }
                 // Catch up on anything raised while the app was in the
                 // background, then keep the feed current while it is open.
                 NotificationService.shared.startPolling()

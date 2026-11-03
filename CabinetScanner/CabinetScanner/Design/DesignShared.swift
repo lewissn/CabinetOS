@@ -221,6 +221,60 @@ struct FactRow: View {
     }
 }
 
+/// A section that stays one row until it's wanted: its name, a line saying
+/// what's inside so nothing is hidden without a clue that it's there, and a
+/// chevron. Starts collapsed unless told otherwise.
+struct CollapsibleRow<Content: View>: View {
+    let title: String
+    var summary: String?
+    @ViewBuilder var content: () -> Content
+
+    @State private var isExpanded: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(_ title: String, summary: String? = nil, startsExpanded: Bool = false, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.summary = summary
+        self.content = content
+        _isExpanded = State(initialValue: startsExpanded)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(PaperMotion.transition(reduceMotion: reduceMotion)) { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: PaperSpace.m) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title).paperType(.body).foregroundStyle(PaperColor.ink)
+                        if let summary, !isExpanded {
+                            Text(summary)
+                                .paperType(.footnote, numeric: true)
+                                .foregroundStyle(PaperColor.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: PaperSpace.m)
+                    PaperIcon(isExpanded ? .chevronDown : .chevronRight, size: 14, color: PaperColor.faint)
+                }
+                .frame(minHeight: 60)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+            .accessibilityHint(isExpanded ? "Hides this section" : "Shows this section")
+
+            if isExpanded {
+                content()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, PaperSpace.l)
+                    .transition(.opacity)
+            }
+        }
+        .overlay(alignment: .bottom) { PaperHairline(color: PaperColor.hairlineSoft) }
+    }
+}
+
 /// Quiet inline loading line: a small spinner and words. Used where a load
 /// takes long enough to notice; nothing is drawn as zero while it runs.
 struct LoadingLine: View {

@@ -1,0 +1,737 @@
+import CabinetDesign
+import PhotosUI
+import SwiftUI
+
+// MARK: - Fitting kit
+//
+// The person picking a job's fittings reads what's needed, ticks items as they
+// go, and finishes with a photo of the parts. Ticks show at once and survive a
+// dropped connection (KitPickQueue). Finishing is separate and deliberate: it
+// completes the job's ShopVOX step, which can't be undone.
+
+struct FittingKitView: View {
+    let jobId: String
+    var jobTitle: String?
+    var backLabel: String = "Job"
+
+    @StateObject private var viewModel: FittingKitViewModel
+    @ObservedObject private var queue = KitPickQueue.shared
+    @State private var countingItem: KitPickItem?
+    @State private var viewingPhoto: KitPhoto?
+    @State private var showingCamera = false
+    @State private var showingLibrary = false
+    @State private var libraryItem: PhotosPickerItem?
+    @State private var confirmingFinish = false
+
+    init(jobId: String, jobTitle: String? = nil, backLabel: String = "Job") {
+        self.jobId = jobId
+        self.jobTitle = jobTitle
+        self.backLabel = backLabel
+        _viewModel = StateObject(wrappedValue: FittingKitViewModel(jobId: jobId))
+    }
+
+    private var picking: KitPicking? { queue.displayed(jobId: jobId) }
+    private var customer: String? { viewModel.detail?.customer.name ?? jobTitle }
+    private var salesOrder: String? { viewModel.detail?.references.salesOrderNumber }
+    private var cameraAvailable: Bool { UIImagePickerController.isSourceTypeAvailable(.camera) }
+
+    /// "Danielle Tucker (SO 12056)", for confirmations that have to name the job.
+    private var jobName: String {
+        switch (customer, salesOrder) {
+        case let (name?, so?): "\(name) (SO \(so))"
+        case let (name?, nil): name
+        case let (nil, so?): "SO \(so)"
+        case (nil, nil): "this job"
+        }
+    }
+
+    var body: some View {
+        PushedScreen(back: backLabel, onRefresh: { await viewModel.load() }) {
+            VStack(alignment: .leading, spacing: 0) {
+                header
+                content
+            }
+            .screen()
+        }
+        .task(id: jobId) { await viewModel.load() }
+        .onResume { await viewModel.load() }
+        // The server says the kit changed under the picker: read it again.
+        .onChange(of: queue.kitChanges[jobId]) { _, _ in
+            Task { await viewModel.load() }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if let outcome = viewModel.outcome {
+                StepActionBanner(result: outcome) { viewModel.outcome = nil }
+            }
+        }
+        .sheet(item: $countingItem) { item in
+            KitCountSheet(item: item) { viewModel.setCount($0, for: item) }
+                .paperSheet(detents: [.medium, .large])
+        }
+        .sheet(item: $viewingPhoto) { photo in
+            KitPhotoSheet(jobId: jobId, photo: photo, jobName: jobName) {
+                Task { await viewModel.delete(photo) }
+            }
+            .paperSheet()
+        }
+        .fullScreenCover(isPresented: $showingCamera) {
+            KitCameraView { image in
+                showingCamera = false
+                if let image { Task { await viewModel.upload(image) } }
+            }
+            .ignoresSafeArea()
+        }
+        .photosPicker(isPresented: $showingLibrary, selection: $libraryItem, matching: .images)
+        .onChange(of: libraryItem) { _, item in
+            guard let item else { return }
+            libraryItem = nil
+            Task {
+                if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
+                    await viewModel.upload(image)
+                }
+            }
+        }
+    }
+
+    private var finishMessage: String {
+        var parts: [String] = []
+        if let picking, !picking.complete {
+            let short = picking.counts.items - picking.counts.done
+            if short > 0 { parts.append("\(Format.count(short, "item")) not fully picked.") }
+            if !picking.orphans.isEmpty { parts.append("Some parts still need taking out of the box.") }
+        }
+        if viewModel.photos.isEmpty { parts.append("No photo has been added.") }
+        parts.append("This marks the step done in ShopVOX. It can't be undone from the app.")
+        return parts.joined(separator: " ")
+    }
+
+    private func finish() {
+        Task { await viewModel.perform(.complete) }
+    }
+
+    private func addPhoto() {
+        if cameraAvailable { showingCamera = true } else { showingLibrary = true }
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: PaperSpace.s) {
+            if let salesOrder { Code("SO \(salesOrder)", color: PaperColor.ink, size: 14) }
+            Text("Fitting kit")
+                .paperType(.largeTitle)
+                .foregroundStyle(PaperColor.ink)
+                .accessibilityAddTraits(.isHeader)
+            if let customer {
+                Text(customer).paperType(.bodyL).foregroundStyle(PaperColor.body)
+            }
+        }
+        .padding(.top, PaperSpace.s)
+    }
+
+    // MARK: - Content
+
+    @ViewBuilder
+    private var content: some View {
+        if let response = viewModel.response {
+            loaded(response)
+        } else if let error = viewModel.errorMessage, !viewModel.isLoading {
+            PaperEmptyState("The kit didn't load", message: error, actionTitle: "Try again") {
+                Task { await viewModel.load() }
+            }
+            .section(top: PaperSpace.xxl)
+        } else {
+            LoadingLine("Loading the kit").section(top: PaperSpace.xxl)
+        }
+    }
+
+    @ViewBuilder
+    private func loaded(_ response: FittingKitResponse) -> some View {
+        if let error = viewModel.errorMessage {
+            Notice(text: "This may be out of date. \(error)", tone: .soon).section(top: PaperSpace.l)
+        }
+        if let problem = response.kitProblem {
+            Notice(text: problem, tone: .soon).section(top: PaperSpace.l)
+        }
+        if let problem = response.pickingProblem {
+            Notice(text: problem, tone: .soon).section(top: PaperSpace.l)
+        }
+        sendState
+
+        if let picking {
+            progress(picking).section(top: PaperSpace.xl)
+            orphans(picking.orphans)
+            pickList(picking.items)
+            photosSection.section()
+            stepSection(picking).section()
+        } else if let kit = response.kit {
+            // No picking on the server yet: the list can still be read.
+            readOnlyList(kit)
+            stepSection(nil).section()
+        } else if response.kitProblem == nil {
+            PaperEmptyState("No fitting kit yet",
+                            message: "Add this job's fittings list or ERP export on its page on the Cabinet Lab website, and the kit appears here.")
+                .section(top: PaperSpace.xxl)
+        }
+    }
+
+    /// Only once sending has actually failed: a tick on its way isn't news.
+    @ViewBuilder
+    private var sendState: some View {
+        if let problem = queue.problems[jobId] {
+            let waiting = queue.waitingCount(jobId: jobId)
+            if waiting > 0 {
+                Notice(text: "\(Format.count(waiting, "change")) waiting to send. \(problem)", tone: .soon,
+                       action: "Send now") {
+                    Task { await queue.flush(jobId: jobId) }
+                }
+                .section(top: PaperSpace.l)
+            } else {
+                Notice(text: problem, tone: .soon).section(top: PaperSpace.l)
+            }
+        }
+    }
+
+    private func progress(_ picking: KitPicking) -> some View {
+        let fraction = picking.counts.items > 0 ? Double(picking.counts.done) / Double(picking.counts.items) : 0
+        return VStack(alignment: .leading, spacing: PaperSpace.s) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(PaperFormat.int(picking.counts.done)) of \(Format.count(picking.counts.items, "item")) picked")
+                    .paperType(.title, numeric: true)
+                    .foregroundStyle(PaperColor.ink)
+                Spacer(minLength: PaperSpace.m)
+                if picking.complete { StatusText("All picked", tone: .done, style: .subhead) }
+            }
+            PaperBar(fraction, color: picking.complete ? PaperColor.success : PaperColor.accent, height: 6)
+                .frame(height: 6)
+        }
+    }
+
+    // MARK: - Leftovers
+
+    @ViewBuilder
+    private func orphans(_ orphans: [KitOrphan]) -> some View {
+        if !orphans.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                PaperSectionHeader("Take these out")
+                Notice(text: "These were picked earlier but aren't on the kit any more. The fittings list has changed.", tone: .held)
+                    .padding(.vertical, PaperSpace.s)
+                ForEach(orphans) { orphan in
+                    HStack(spacing: PaperSpace.m) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(orphan.displayName).paperType(.body).foregroundStyle(PaperColor.ink)
+                            Text("\(PaperFormat.int(orphan.picked)) in the box").paperType(.footnote, numeric: true).foregroundStyle(PaperColor.secondary)
+                        }
+                        Spacer(minLength: PaperSpace.m)
+                        Button("Mark taken out") { viewModel.takenOut(orphan) }
+                            .buttonStyle(.paperPill(.outline, .compact))
+                    }
+                    .padding(.vertical, PaperSpace.m)
+                    .overlay(alignment: .bottom) { PaperHairline(color: PaperColor.hairlineSoft) }
+                }
+            }
+            .section(top: PaperSpace.xxl)
+        }
+    }
+
+    // MARK: - The list
+
+    private func pickList(_ items: [KitPickItem]) -> some View {
+        ForEach(KitCategory.grouped(items), id: \.category) { group in
+            VStack(alignment: .leading, spacing: 0) {
+                PaperSectionHeader(KitCategory.title(group.category))
+                if group.category == KitPickItem.unmappedCategory {
+                    Notice(text: "The fittings library doesn't know these. They still go in the box.", tone: .soon)
+                        .padding(.vertical, PaperSpace.s)
+                }
+                ForEach(group.items) { item in
+                    KitItemRow(item: item,
+                               toggle: { viewModel.toggle(item) },
+                               count: { countingItem = item })
+                }
+            }
+            .section(top: PaperSpace.xxl)
+        }
+    }
+
+    private func readOnlyList(_ kit: FittingKit) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(kit.result.groups, id: \.category) { group in
+                VStack(alignment: .leading, spacing: 0) {
+                    PaperSectionHeader(KitCategory.title(group.category))
+                    ForEach(group.items, id: \.id) { item in
+                        FactRow(label: item.label, value: PaperFormat.int(item.qty))
+                    }
+                }
+                .section(top: PaperSpace.xxl)
+            }
+            if !kit.result.unmapped.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    PaperSectionHeader(KitCategory.title(KitPickItem.unmappedCategory))
+                    Notice(text: "The fittings library doesn't know these. They still go in the box.", tone: .soon)
+                        .padding(.vertical, PaperSpace.s)
+                    ForEach(kit.result.unmapped, id: \.name) { item in
+                        FactRow(label: item.name, value: PaperFormat.int(item.qty))
+                    }
+                }
+                .section(top: PaperSpace.xxl)
+            }
+        }
+    }
+
+    // MARK: - Photos
+
+    private var photosSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PaperSectionHeader("Photos") {
+                if !viewModel.photos.isEmpty {
+                    Text(PaperFormat.int(viewModel.photos.count)).paperType(.footnote, numeric: true).foregroundStyle(PaperColor.tertiary)
+                }
+            }
+            if let problem = viewModel.photoProblem {
+                Notice(text: problem, tone: .soon).padding(.top, PaperSpace.s)
+            }
+            if !viewModel.photos.isEmpty {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: PaperSpace.s)], spacing: PaperSpace.s) {
+                    ForEach(viewModel.photos) { photo in
+                        Button {
+                            viewingPhoto = photo
+                        } label: {
+                            KitPhotoImage(jobId: jobId, photo: photo)
+                                .frame(minWidth: 0, maxWidth: .infinity)
+                                .aspectRatio(1, contentMode: .fill)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Photo taken by \(photo.takenBy)")
+                    }
+                }
+                .padding(.top, PaperSpace.m)
+            }
+            HStack(spacing: PaperSpace.m) {
+                if cameraAvailable {
+                    Button("Take a photo") { showingCamera = true }
+                        .buttonStyle(.paperPill(.outline, .regular, fullWidth: true))
+                }
+                Button("Choose a photo") { showingLibrary = true }
+                    .buttonStyle(.paperPill(.outline, .regular, fullWidth: true))
+            }
+            .disabled(viewModel.isUploading)
+            .padding(.top, PaperSpace.m)
+
+            if viewModel.isUploading {
+                LoadingLine("Sending the photo").padding(.top, PaperSpace.m)
+            }
+        }
+    }
+
+    // MARK: - Finishing
+
+    @ViewBuilder
+    private func stepSection(_ picking: KitPicking?) -> some View {
+        if let step = viewModel.kitStep {
+            VStack(alignment: .leading, spacing: PaperSpace.m) {
+                PaperSectionHeader(FittingKitViewModel.stepName) {
+                    StatusText(step.displayState, tone: step.tone)
+                }
+                if step.isComplete {
+                    Text("This kit has been finished.").paperType(.subhead).foregroundStyle(PaperColor.secondary)
+                } else {
+                    // The moment to offer a photo, without standing in the way.
+                    if picking?.complete == true, viewModel.photos.isEmpty {
+                        Notice(text: "Everything's picked. Add a photo of the parts before you finish.", tone: .progress,
+                               action: "Add photo") { addPhoto() }
+                    }
+                    stepButtons(step, picking: picking)
+                }
+            }
+        } else if viewModel.detail != nil {
+            Text("This job has no \(FittingKitViewModel.stepName) step in ShopVOX, so the kit can't be finished from here.")
+                .paperType(.footnote)
+                .foregroundStyle(PaperColor.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func stepButtons(_ step: JobStep, picking: KitPicking?) -> some View {
+        let canFinish = step.isActionable && step.action(.complete)?.allowed == true
+        let canStart = step.isActionable && step.action(.start)?.allowed == true
+        let canPause = step.isActionable && step.action(.stop)?.allowed == true
+        // Finish leads once there's nothing left to pick, or if the step is
+        // running. Before that, it stays available without being the obvious tap.
+        let finishIsPrimary = picking?.complete != false || step.isActive
+
+        Button {
+            confirmingFinish = true
+        } label: {
+            if viewModel.isMovingStep {
+                ProgressView().tint(PaperColor.onAccent)
+            } else {
+                Text("Finish fitting kit")
+            }
+        }
+        .buttonStyle(.paperPill(finishIsPrimary ? .accent : .outline, .floor, fullWidth: true))
+        .disabled(!canFinish || viewModel.isMovingStep)
+        .confirmationDialog("Finish the fitting kit for \(jobName)?", isPresented: $confirmingFinish, titleVisibility: .visible) {
+            if viewModel.photos.isEmpty {
+                Button("Add a photo first") { addPhoto() }
+                Button("Finish without a photo") { finish() }
+            } else {
+                Button("Finish fitting kit") { finish() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(finishMessage)
+        }
+
+        if canStart || canPause {
+            HStack(spacing: PaperSpace.m) {
+                if canStart {
+                    Button(step.isHalted ? "Resume" : "Start") { Task { await viewModel.perform(.start) } }
+                        .buttonStyle(.paperPill(.outline, .regular, fullWidth: true))
+                }
+                if canPause {
+                    Button("Pause") { Task { await viewModel.perform(.stop) } }
+                        .buttonStyle(.paperPill(.outline, .regular, fullWidth: true))
+                }
+            }
+            .disabled(viewModel.isMovingStep)
+        }
+
+        if !canFinish, let reason = step.action(.complete)?.reason {
+            Text(reason).paperType(.footnote).foregroundStyle(PaperColor.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+// MARK: - A line on the list
+
+private struct KitItemRow: View {
+    let item: KitPickItem
+    let toggle: () -> Void
+    let count: () -> Void
+
+    private var checkState: PaperCheck.State {
+        if item.done { return .done }
+        return item.picked > 0 ? .active : .open
+    }
+
+    var body: some View {
+        HStack(spacing: PaperSpace.m) {
+            Button(action: toggle) {
+                HStack(spacing: PaperSpace.m) {
+                    PaperCheck(checkState, size: 30)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.label)
+                            .paperType(.body)
+                            .foregroundStyle(item.done ? PaperColor.secondary : PaperColor.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .multilineTextAlignment(.leading)
+                        if item.over {
+                            StatusText("\(PaperFormat.int(item.picked - item.required)) too many: the kit may have changed", tone: .soon, lineLimit: nil)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: 60)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(item.label)
+            .accessibilityValue("\(item.picked) of \(item.required) picked")
+            .accessibilityAddTraits(item.done ? .isSelected : [])
+
+            Button(action: count) {
+                Text("\(PaperFormat.int(item.picked)) / \(PaperFormat.int(item.required))")
+                    .paperType(.subhead, numeric: true)
+                    .foregroundStyle(PaperColor.ink)
+                    .padding(.horizontal, PaperSpace.m)
+                    .frame(minWidth: 76, minHeight: 44)
+                    .overlay(Capsule().strokeBorder(PaperColor.border, lineWidth: 1))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Change the count for \(item.label)")
+        }
+        .padding(.vertical, PaperSpace.xs)
+        .overlay(alignment: .bottom) { PaperHairline(color: PaperColor.hairlineSoft) }
+    }
+}
+
+enum KitCategory {
+    /// Grouped in the order the server lists them; unknown fittings come last.
+    static func grouped(_ items: [KitPickItem]) -> [(category: String, items: [KitPickItem])] {
+        var groups: [(category: String, items: [KitPickItem])] = []
+        for item in items {
+            if let i = groups.firstIndex(where: { $0.category == item.category }) {
+                groups[i].items.append(item)
+            } else {
+                groups.append((item.category, [item]))
+            }
+        }
+        return groups
+    }
+
+    static func title(_ category: String) -> String {
+        category == KitPickItem.unmappedCategory ? "Not in the fittings library" : category.capitalized
+    }
+}
+
+// MARK: - A partial count
+
+private struct KitCountSheet: View {
+    let item: KitPickItem
+    let onSet: (Int) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var text: String
+
+    init(item: KitPickItem, onSet: @escaping (Int) -> Void) {
+        self.item = item
+        self.onSet = onSet
+        // Empty rather than "0", so typing 3 doesn't read "03".
+        _text = State(initialValue: item.picked > 0 ? String(item.picked) : "")
+    }
+
+    private var value: Int? { Int(text.trimmingCharacters(in: .whitespaces)) }
+
+    var body: some View {
+        SheetScreen(item.label) {
+            EmptyView()
+        } content: {
+            VStack(alignment: .leading, spacing: PaperSpace.l) {
+                Text("How many have been picked? The kit needs \(PaperFormat.int(item.required)).")
+                    .paperType(.subhead, numeric: true)
+                    .foregroundStyle(PaperColor.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                PaperHeroField(text: $text, unit: "picked", accessibilityLabel: "Number picked")
+                    .keyboardType(.numberPad)
+                    .onChange(of: text) { _, new in
+                        let digits = new.filter(\.isNumber)
+                        if digits != new { text = digits }
+                    }
+
+                Button("Set count") {
+                    if let value { onSet(value) }
+                    dismiss()
+                }
+                .buttonStyle(.paperPill(.accent, .floor, fullWidth: true))
+                .disabled(value == nil)
+
+                HStack(spacing: PaperSpace.m) {
+                    Button("Pick all \(PaperFormat.int(item.required))") {
+                        onSet(item.required)
+                        dismiss()
+                    }
+                    .buttonStyle(.paperPill(.outline, .regular, fullWidth: true))
+                    Button("Clear") {
+                        onSet(0)
+                        dismiss()
+                    }
+                    .buttonStyle(.paperPill(.outline, .regular, fullWidth: true))
+                }
+            }
+            .padding(.top, PaperSpace.m)
+        }
+    }
+}
+
+// MARK: - Photos
+
+/// Fetched with the device's token, since photos have no public link. Kept in
+/// memory for the session so the grid doesn't refetch each time it's drawn.
+@MainActor
+private enum KitPhotoCache {
+    static let images = NSCache<NSString, UIImage>()
+    static let service = JobIndexService()
+}
+
+private struct KitPhotoImage: View {
+    let jobId: String
+    let photo: KitPhoto
+    var contentMode: ContentMode = .fill
+
+    @State private var image: UIImage?
+    @State private var failed = false
+
+    var body: some View {
+        ZStack {
+            PaperColor.segment
+            if let image {
+                Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode)
+            } else if failed {
+                PaperIcon(.alert, size: 18, color: PaperColor.tertiary)
+            } else {
+                ProgressView().tint(PaperColor.secondary)
+            }
+        }
+        .task(id: photo.id) {
+            if let cached = KitPhotoCache.images.object(forKey: photo.id as NSString) {
+                image = cached
+                return
+            }
+            do {
+                let data = try await KitPhotoCache.service.kitPhotoData(jobId: jobId, photoId: photo.id)
+                guard let loaded = UIImage(data: data) else { throw JobIndexError.server(-1) }
+                KitPhotoCache.images.setObject(loaded, forKey: photo.id as NSString)
+                image = loaded
+            } catch {
+                failed = !Task.isCancelled
+            }
+        }
+    }
+}
+
+private struct KitPhotoSheet: View {
+    let jobId: String
+    let photo: KitPhoto
+    let jobName: String
+    let onDelete: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmingDelete = false
+
+    private var takenLine: String {
+        let when = DateFormatters.parseISO8601(photo.takenAt).map { Format.when($0) }
+        return ["Taken by \(photo.takenBy)", when].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    var body: some View {
+        SheetScreen("Kit photo") {
+            EmptyView()
+        } content: {
+            VStack(alignment: .leading, spacing: PaperSpace.m) {
+                KitPhotoImage(jobId: jobId, photo: photo, contentMode: .fit)
+                    .frame(minHeight: 280)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                Text(takenLine).paperType(.footnote, numeric: true).foregroundStyle(PaperColor.secondary)
+                if let note = photo.note {
+                    Text(note).paperType(.body).foregroundStyle(PaperColor.body)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Button("Delete photo", role: .destructive) { confirmingDelete = true }
+                    .buttonStyle(.paperText(PaperColor.danger, .subhead, weight: .medium))
+            }
+            .padding(.top, PaperSpace.m)
+        }
+        .confirmationDialog("Delete this photo of the kit for \(jobName)?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete photo", role: .destructive) {
+                onDelete()
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+}
+
+/// The system camera. Hands back the photo, or nil if it was cancelled.
+private struct KitCameraView: UIViewControllerRepresentable {
+    let onFinish: (UIImage?) -> Void
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ controller: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(onFinish: onFinish) }
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let onFinish: (UIImage?) -> Void
+
+        init(onFinish: @escaping (UIImage?) -> Void) {
+            self.onFinish = onFinish
+        }
+
+        func imagePickerController(_ picker: UIImagePickerController,
+                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            onFinish(info[.originalImage] as? UIImage)
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            onFinish(nil)
+        }
+    }
+}
+
+// MARK: - On the job screen
+
+/// One row under the job's proof: how far the kit has got, and the way to it.
+struct FittingKitSection: View {
+    let jobId: String
+    var jobTitle: String?
+
+    @ObservedObject private var queue = KitPickQueue.shared
+    @State private var response: FittingKitResponse?
+    @State private var problem: String?
+    /// The server predates fitting kits, so there's nothing to offer.
+    @State private var isUnavailable = false
+    @State private var service = JobIndexService()
+
+    var body: some View {
+        Group {
+            if !isUnavailable {
+                VStack(alignment: .leading, spacing: 0) {
+                    PaperSectionHeader("Fitting kit")
+                    if let response, response.kit != nil {
+                        NavigationLink {
+                            FittingKitView(jobId: jobId, jobTitle: jobTitle)
+                        } label: {
+                            PaperRow("Pick the fitting kit", detail: summary(response), chevron: true)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Text(emptyLine)
+                            .paperType(.subhead)
+                            .foregroundStyle(PaperColor.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.vertical, PaperSpace.m)
+                    }
+                }
+            }
+        }
+        // Runs each time the screen comes back into view, which is what updates
+        // the count after picking.
+        .task { await load() }
+    }
+
+    private var emptyLine: String {
+        if let problem { return problem }
+        if let kitProblem = response?.kitProblem { return kitProblem }
+        return response == nil ? "Loading the kit" : "No fittings list or ERP export has been added to this job yet."
+    }
+
+    private func summary(_ response: FittingKitResponse) -> String {
+        guard let picking = queue.displayed(jobId: jobId) else {
+            // The whole sentence is on the kit screen; a row has one line.
+            return "Picking isn't available yet"
+        }
+        var parts = [picking.complete
+            ? "All \(Format.count(picking.counts.items, "item")) picked"
+            : "\(PaperFormat.int(picking.counts.done)) of \(Format.count(picking.counts.items, "item")) picked"]
+        if !response.photos.isEmpty { parts.append(Format.count(response.photos.count, "photo")) }
+        return parts.joined(separator: " · ")
+    }
+
+    private func load() async {
+        let readAt = queue.revision(jobId: jobId)
+        do {
+            let fresh = try await service.fittingKit(jobId: jobId)
+            response = fresh
+            queue.adopt(fresh.picking, jobId: jobId, readAtRevision: readAt)
+            problem = nil
+        } catch JobIndexError.missingRoute {
+            isUnavailable = true
+        } catch {
+            guard !Task.isCancelled else { return }
+            problem = (error as? JobIndexError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+}

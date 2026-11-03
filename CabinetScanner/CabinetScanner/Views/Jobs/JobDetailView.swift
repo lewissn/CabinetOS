@@ -7,9 +7,11 @@ import SwiftUI
 // not rendered at all — the brief is explicit that a page of blank fields is
 // worse than a short page. Each fact is said once.
 //
-// Every section that carries ShopVOX information states its provenance, and
-// "Open in ShopVOX" is always available rather than appearing only when
-// something is missing.
+// What's on the page straight away is what somebody at a bench acts on: the
+// step, the courier, the proof, when it leaves, the kit. Everything else is one
+// collapsed row saying what's inside, so a large order doesn't bury the page in
+// text. Where the information came from is one of those rows, and "Open in
+// ShopVOX" stays visible at the foot of the page.
 
 struct JobDetailView: View {
     let jobId: String
@@ -19,7 +21,7 @@ struct JobDetailView: View {
 
     @StateObject private var viewModel: JobDetailViewModel
     @Environment(\.openURL) private var openURL
-    @State private var showingProof = false
+    @State private var openingProof: ProofOpening?
 
     init(jobId: String, knownTitle: String? = nil, jobTitle: String? = nil, backLabel: String = "Jobs") {
         self.jobId = jobId
@@ -57,13 +59,14 @@ struct JobDetailView: View {
         // Keyed on the job, so a screen reused for a different one reloads
         // rather than keeping the first job's contents.
         .task(id: jobId) { await viewModel.load(jobId: jobId) }
-        .sheet(isPresented: $showingProof) {
+        .sheet(item: $openingProof) { opening in
             if let proof = viewModel.detail?.proof, !proof.isEmpty {
                 ProofViewerView(
                     jobId: jobId,
                     jobTitle: knownTitle ?? viewModel.detail?.customer.name ?? "Job",
                     label: proof.displayLabel,
-                    externalURL: proof.url
+                    externalURL: proof.url,
+                    preloaded: opening.data
                 )
                 .paperSheet()
             }
@@ -82,9 +85,8 @@ struct JobDetailView: View {
     //
     // Ordered for the people who actually open this screen: packaging and
     // post-production, standing at a bench with a job in front of them. They
-    // are here to move the step on, look at the proof, and read the order
-    // details — so those come first, and everything that answers "whose job is
-    // this and where did it come from" comes after.
+    // are here to move the step on, look at the proof, and see when it leaves,
+    // so those come first. The rest waits in collapsed rows until it's wanted.
 
     private func page(_ detail: JobDetail) -> some View {
         let focus = currentStep(detail)
@@ -116,32 +118,31 @@ struct JobDetailView: View {
             // Easy to find: under the step button, not halfway down the page.
             CourierQuickAction().section(top: PaperSpace.l)
 
+            // Above the rest of the page rather than in its collapsed row:
+            // it changes how far everything below can be trusted.
+            if detail.provenance.isStale {
+                Notice(text: "ShopVOX told us this job changed but not what changed. Open it in ShopVOX for the current state.", tone: .soon)
+                    .section(top: PaperSpace.xl)
+            }
+
             proofSection(detail.proof).section()
 
-            if !detail.dates.isEmpty { datesSection(detail.dates).section() }
+            if !detail.dates.isEmpty { despatchSection(detail).section() }
 
-            if let items = detail.lineItems, !items.isEmpty { lineItemsSection(items).section() }
-
-            if let instructions = detail.instructions, !instructions.isEmpty {
-                instructionsSection(instructions).section()
-            }
+            FittingKitSection(jobId: jobId, jobTitle: detail.customer.name ?? knownTitle).section()
 
             // Directly under the workflow facts, because raising one and
             // finishing one are both workflow actions — finishing completes two
-            // steps.
-            JobConsignmentSection().section()
+            // steps. It says nothing, and takes no room, until there is one.
+            JobConsignmentSection()
 
-            if !detail.steps.isEmpty {
-                stepsSection(detail.steps, capabilities: detail.workflowCapabilities).section()
+            moreSections(detail).section()
+
+            if let urlString = detail.shopvoxUrl, let url = URL(string: urlString) {
+                Button("Open in ShopVOX") { openURL(url) }
+                    .buttonStyle(.paperPill(.outline, .regular))
+                    .section(top: PaperSpace.xl)
             }
-
-            if let team = detail.team, !team.isEmpty { teamSection(team).section() }
-
-            if hasMoreFacts(detail) { moreSection(detail).section() }
-
-            if !detail.aliases.isEmpty { aliasesSection(detail.aliases).section() }
-
-            provenanceSection(detail).section()
         }
         }
         .id(jobId)
@@ -213,30 +214,30 @@ struct JobDetailView: View {
 
     @ViewBuilder
     private func proofSection(_ proof: JobProof?) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            PaperSectionHeader("Proof")
-            if let proof, !proof.isEmpty {
-                Button {
-                    showingProof = true
-                } label: {
-                    PaperRow("View proof", detail: proof.displayLabel, chevron: true)
+        VStack(alignment: .leading, spacing: PaperSpace.s) {
+            PaperSectionHeader("Proof") {
+                // ShopVOX gives no approval state, so this says exactly what it is.
+                if let proof, !proof.isEmpty {
+                    Text("May not be the approved version").paperType(.footnote).foregroundStyle(PaperColor.tertiary)
                 }
-                .buttonStyle(.plain)
+            }
+            if let proof, !proof.isEmpty {
+                ProofPreview(jobId: jobId, label: proof.displayLabel) { data in
+                    openingProof = ProofOpening(data: data)
+                }
             } else {
                 // Roughly one job in twenty has no proof. Saying so plainly
                 // beats an absent section, which reads as "still loading".
                 Text(proof?.note ?? "No proof has been attached to this job in ShopVOX.")
                     .paperType(.subhead)
                     .foregroundStyle(PaperColor.secondary)
-                    .padding(.vertical, PaperSpace.m)
             }
-            // ShopVOX gives no approval state, so this says exactly what it is.
-            footnote("The proof currently on the job in ShopVOX. Its approval state is not published by the API, so this is not necessarily the approved artwork.")
         }
     }
 
-    private func datesSection(_ d: JobDates) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+    private func despatchSection(_ detail: JobDetail) -> some View {
+        let d = detail.dates, l = detail.logistics
+        return VStack(alignment: .leading, spacing: 0) {
             PaperSectionHeader("Despatch")
             // The despatch date leads, in its own weight. It is the one date
             // on this screen that decides what happens on the bench today.
@@ -252,70 +253,68 @@ struct JobDetailView: View {
                     }
                 }
                 .padding(.vertical, PaperSpace.s)
-                if let sourceLine = despatchSourceLine(d) {
-                    Text(sourceLine).paperType(.footnote).foregroundStyle(PaperColor.secondary)
-                        .padding(.bottom, PaperSpace.s)
-                }
             }
-
+            if let method = l.shippingMethod { FactRow(label: "Shipping", value: method) }
+            if let city = l.shipToCity { FactRow(label: "Ship to", value: city) }
             if let prod = d.productionDueDate, let date = JobDateFormatting.parse(prod) {
                 FactRow(label: "Production due", value: JobDateFormatting.medium(date))
             }
-
-            // Shown only when it differs, and labelled as unmaintained. It
-            // exists on the order, half the time, and nobody edits it — so
-            // presenting it as an equal is how somebody works to the wrong day.
-            if let shipping = d.shippingDate,
-               shipping != (d.despatchDate ?? d.orderDueDate),
-               let date = JobDateFormatting.parse(shipping) {
-                FactRow(label: "ShopVOX shipping date", value: JobDateFormatting.medium(date))
-            }
-
-            footnote("Despatch is the due date on the order in ShopVOX — the date the office moves when a job is brought forward. It is not a confirmed production schedule."
-                     + (d.shippingDate != nil && d.shippingDate != (d.despatchDate ?? d.orderDueDate)
-                        ? " ShopVOX also carries a separate \"shipping date\" field. It is not kept up to date here, so nothing works from it."
-                        : ""))
         }
     }
 
-    /// Where the despatch date came from and when it was last checked, if the
-    /// server says.
-    private func despatchSourceLine(_ d: JobDates) -> String? {
-        var parts: [String] = []
-        if let source = d.despatchDateSource { parts.append("From ShopVOX \(source)") }
-        if let seen = JobDateFormatting.relative(fromISO8601: d.despatchDateSeenAt) { parts.append("checked \(seen)") }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
+    // MARK: Collapsed rows
 
-    // MARK: Instructions and contents
-
-    private func instructionsSection(_ instructions: JobInstructions) -> some View {
+    private func moreSections(_ detail: JobDetail) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            PaperSectionHeader("Instructions")
-            ForEach(instructions.sections, id: \.title) { section in
-                VStack(alignment: .leading, spacing: PaperSpace.xs) {
-                    Text(section.title).paperType(.label).foregroundStyle(PaperColor.secondary)
-                    Text(JobTextFormatting.plain(section.text))
-                        .paperType(.body)
-                        .foregroundStyle(PaperColor.body)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
+            PaperSectionHeader("More on this job")
+
+            // A row per set of notes, named and starting with its first line,
+            // so a note that matters shows it's there without being opened.
+            if let instructions = detail.instructions {
+                ForEach(instructions.sections, id: \.title) { section in
+                    let text = JobTextFormatting.plain(section.text)
+                    CollapsibleRow(section.title, summary: JobTextFormatting.firstLine(text)) {
+                        InstructionText(text: text)
+                    }
                 }
-                .padding(.vertical, PaperSpace.m)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .overlay(alignment: .bottom) { PaperHairline(color: PaperColor.hairlineSoft) }
             }
-            footnote("Written on the job in ShopVOX. Formatting is stripped, so check ShopVOX if something reads oddly.")
+
+            if let items = detail.lineItems, !items.isEmpty {
+                CollapsibleRow("As ordered", summary: Format.count(items.count, "line item")) {
+                    lineItems(items)
+                }
+            }
+
+            if !detail.steps.isEmpty {
+                CollapsibleRow("Whole workflow", summary: "\(detail.steps.filter(\.isComplete).count) of \(detail.steps.count) steps done") {
+                    workflow(detail.steps, capabilities: detail.workflowCapabilities)
+                }
+            }
+
+            if hasMoreFacts(detail) {
+                CollapsibleRow("Details", summary: detailsSummary(detail)) {
+                    details(detail)
+                }
+            }
+
+            if !detail.aliases.isEmpty {
+                CollapsibleRow("Also known as", summary: Format.count(detail.aliases.count, "other reference")) {
+                    aliases(detail.aliases)
+                }
+            }
+
+            CollapsibleRow("Where this came from", summary: provenanceSummary(detail)) {
+                provenance(detail)
+            }
         }
     }
 
-    private func lineItemsSection(_ items: [JobLineItem]) -> some View {
+    private func lineItems(_ items: [JobLineItem]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            PaperSectionHeader("As ordered")
             ForEach(items, id: \.stableId) { item in
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
-                        Text(item.displayName).paperType(.body).foregroundStyle(PaperColor.ink)
+                        Text(item.displayName).paperType(.subhead).foregroundStyle(PaperColor.ink)
                         Spacer(minLength: PaperSpace.m)
                         if let quantity = item.quantityLabel {
                             Text(quantity).paperType(.subhead, numeric: true).foregroundStyle(PaperColor.body)
@@ -328,29 +327,14 @@ struct JobDetailView: View {
                             .lineLimit(6)
                     }
                 }
-                .padding(.vertical, PaperSpace.m)
+                .padding(.vertical, PaperSpace.s)
                 .overlay(alignment: .bottom) { PaperHairline(color: PaperColor.hairlineSoft) }
             }
-            footnote("The line items on the ShopVOX order, with the quantities as ordered.")
         }
     }
 
-    private func teamSection(_ t: JobTeam) -> some View {
+    private func workflow(_ steps: [JobStep], capabilities: WorkflowCapabilities?) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            PaperSectionHeader("Team")
-            if let rep = t.salesRep { FactRow(label: "Sales rep", value: rep) }
-            if let pm = t.productionManager { FactRow(label: "Production", value: pm) }
-            if let designer = t.designer { FactRow(label: "Designer", value: designer) }
-        }
-    }
-
-    private func stepsSection(_ steps: [JobStep], capabilities: WorkflowCapabilities?) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            PaperSectionHeader("Whole workflow") {
-                Text("\(steps.filter(\.isComplete).count) of \(steps.count) done")
-                    .paperType(.footnote, numeric: true)
-                    .foregroundStyle(PaperColor.tertiary)
-            }
             ForEach(steps) { step in
                 StepRow(
                     step: step,
@@ -362,7 +346,6 @@ struct JobDetailView: View {
                 )
             }
             VStack(alignment: .leading, spacing: PaperSpace.xs) {
-                footnote("Every step on this job. Starting or completing one changes it in ShopVOX — the app shows the result only once ShopVOX confirms it.")
                 // Said once, because it is true of the whole job rather than
                 // of any one step.
                 if let reason = jobWideBlockingReason(steps) {
@@ -386,24 +369,33 @@ struct JobDetailView: View {
     // MARK: Everything else, said once
 
     private func hasMoreFacts(_ d: JobDetail) -> Bool {
-        let c = d.customer, r = d.references, p = d.production, l = d.logistics
+        let c = d.customer, r = d.references, p = d.production, t = d.team
         return c.postcode != nil || c.contactName != nil || c.contactEmail != nil
             || r.projectNumber != nil || r.customerPo != nil || (r.jobNumber != nil && r.salesOrderNumber != nil)
             || p.currentStage != nil || p.currentStepGroup != nil || p.workflowState != nil || p.daysLeft != nil
-            || l.shippingMethod != nil || l.shipToCity != nil
+            || t?.isEmpty == false || differingShippingDate(d.dates) != nil
     }
 
-    private func moreSection(_ d: JobDetail) -> some View {
-        let c = d.customer, r = d.references, p = d.production, l = d.logistics
+    /// "Danielle Tucker · LS1 4AB": the two things most often looked up here.
+    private func detailsSummary(_ d: JobDetail) -> String? {
+        let parts = [d.customer.contactName, d.customer.postcode, d.references.customerPo.map { "PO \($0)" }].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.prefix(2).joined(separator: " · ")
+    }
+
+    /// ShopVOX's own shipping date, only when it differs from the despatch date.
+    private func differingShippingDate(_ d: JobDates) -> String? {
+        guard let shipping = d.shippingDate, shipping != (d.despatchDate ?? d.orderDueDate) else { return nil }
+        return shipping
+    }
+
+    private func details(_ d: JobDetail) -> some View {
+        let c = d.customer, r = d.references, p = d.production
         return VStack(alignment: .leading, spacing: 0) {
-            PaperSectionHeader("Details")
             if let contact = c.contactName { FactRow(label: "Contact", value: contact) }
             if let email = c.contactEmail {
                 FactRow(label: "Email", value: email).textSelection(.enabled)
             }
             if let postcode = c.postcode { FactRow(label: "Postcode", value: postcode) }
-            if let method = l.shippingMethod { FactRow(label: "Shipping", value: method) }
-            if let city = l.shipToCity { FactRow(label: "Ship to", value: city) }
             // The header shows the sales order (or job number when there is
             // none) and the Shopify order; the rest of the references are here.
             if r.salesOrderNumber != nil, let jb = r.jobNumber { FactRow(label: "Job number", value: jb) }
@@ -415,12 +407,22 @@ struct JobDetailView: View {
                 // Negative days left is how ShopVOX expresses overdue.
                 FactRow(label: days < 0 ? "Overdue by" : "Days left", value: Format.count(abs(days), "day"))
             }
+            if let rep = d.team?.salesRep { FactRow(label: "Sales rep", value: rep) }
+            if let pm = d.team?.productionManager { FactRow(label: "Production", value: pm) }
+            if let designer = d.team?.designer { FactRow(label: "Designer", value: designer) }
+            // Here rather than beside the despatch date, and labelled as
+            // unmaintained. It exists on the order, half the time, and nobody
+            // edits it — so showing it as an equal is how somebody works to the
+            // wrong day.
+            if let shipping = differingShippingDate(d.dates), let date = JobDateFormatting.parse(shipping) {
+                FactRow(label: "ShopVOX shipping date", value: JobDateFormatting.medium(date))
+                footnote("ShopVOX's separate shipping date isn't kept up to date here, so nothing works from it.")
+            }
         }
     }
 
-    private func aliasesSection(_ aliases: [JobAlias]) -> some View {
+    private func aliases(_ aliases: [JobAlias]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            PaperSectionHeader("Also known as")
             ForEach(aliases) { alias in
                 RowContainer {
                     HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
@@ -440,29 +442,29 @@ struct JobDetailView: View {
         }
     }
 
-    private func provenanceSection(_ detail: JobDetail) -> some View {
+    private func provenanceSummary(_ detail: JobDetail) -> String? {
         let p = detail.provenance
-        return VStack(alignment: .leading, spacing: PaperSpace.m) {
-            PaperSectionHeader("Where this came from") {
-                if let relative = JobDateFormatting.relative(fromISO8601: p.capturedAt) {
-                    Text(relative).paperType(.footnote).foregroundStyle(PaperColor.tertiary)
-                }
-            }
+        let seen = JobDateFormatting.relative(fromISO8601: p.capturedAt)
+        return [p.label, seen].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private func provenance(_ detail: JobDetail) -> some View {
+        let p = detail.provenance, d = detail.dates
+        return VStack(alignment: .leading, spacing: PaperSpace.xs) {
             ProvenanceBadge(source: p.dataSource, isStale: p.isStale)
-            if p.isStale {
-                Text("ShopVOX told us this job changed but not what changed. Open it in ShopVOX for the current state.")
-                    .paperType(.footnote)
-                    .foregroundStyle(PaperColor.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if let urlString = detail.shopvoxUrl, let url = URL(string: urlString) {
-                Button("Open in ShopVOX") { openURL(url) }
-                    .buttonStyle(.paperPill(.outline, .regular))
-            } else {
+            footnote("ShopVOX is the source of truth for job status.")
+            footnote("Despatch is the due date on the order in ShopVOX, the date the office moves when a job is brought forward. It isn't a confirmed production schedule.")
+            if let sourceLine = despatchSourceLine(d) { footnote(sourceLine) }
+            footnote("Notes come from ShopVOX with their formatting stripped, so check there if something reads oddly.")
+            if detail.shopvoxUrl == nil {
                 footnote("This job has not been seen by a ShopVOX webhook yet, so there is no direct link to it.")
             }
-            footnote("ShopVOX is the source of truth for job status.")
         }
+    }
+
+    /// When the server last confirmed the despatch date, if it says.
+    private func despatchSourceLine(_ d: JobDates) -> String? {
+        JobDateFormatting.relative(fromISO8601: d.despatchDateSeenAt).map { "Despatch date checked \($0)." }
     }
 
     private func footnote(_ text: String) -> some View {
@@ -470,7 +472,46 @@ struct JobDetailView: View {
             .paperType(.footnote)
             .foregroundStyle(PaperColor.tertiary)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, PaperSpace.m)
+            .padding(.top, PaperSpace.s)
+    }
+}
+
+/// Opening the proof, carrying the file the page's preview already fetched.
+private struct ProofOpening: Identifiable {
+    let id = UUID()
+    let data: Data?
+}
+
+// MARK: - Notes from ShopVOX
+
+/// A set of job notes laid out to be read: "Label: value" lines as label and
+/// value, bullets as bullets, the rest as paragraphs.
+private struct InstructionText: View {
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: PaperSpace.s) {
+            ForEach(Array(JobTextFormatting.blocks(text).enumerated()), id: \.offset) { _, block in
+                switch block {
+                case .paragraph(let line):
+                    Text(line)
+                        .paperType(.subhead)
+                        .foregroundStyle(PaperColor.body)
+                        .fixedSize(horizontal: false, vertical: true)
+                case .bullet(let line):
+                    HStack(alignment: .firstTextBaseline, spacing: PaperSpace.s) {
+                        Text("•").paperType(.subhead).foregroundStyle(PaperColor.tertiary)
+                        Text(line)
+                            .paperType(.subhead)
+                            .foregroundStyle(PaperColor.body)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                case .fact(let label, let value):
+                    FactRow(label: label, value: value)
+                }
+            }
+        }
+        .textSelection(.enabled)
     }
 }
 
@@ -558,7 +599,7 @@ private struct StepRow: View {
 /// Three states, not two. A success ShopVOX confirmed reads as done; a success
 /// it accepted but we could not read back says exactly that, because claiming
 /// a state we have not seen is how an app and ShopVOX quietly disagree.
-private struct StepActionBanner: View {
+struct StepActionBanner: View {
     let result: StepActionOutcome
     let dismiss: () -> Void
 
@@ -606,9 +647,12 @@ enum JobTextFormatting {
 
         // Block-level boundaries become newlines before the tags are stripped,
         // otherwise every paragraph runs into the next.
-        for pattern in ["</p>", "<br>", "<br/>", "<br />", "</div>", "</li>", "</tr>"] {
+        for pattern in ["</p>", "<br>", "<br/>", "<br />", "</div>", "</li>", "</tr>", "</ul>", "</ol>"] {
             text = text.replacingOccurrences(of: pattern, with: "\n", options: .caseInsensitive)
         }
+        text = text.replacingOccurrences(of: "</h[1-6]>", with: "\n", options: [.regularExpression, .caseInsensitive])
+        // Kept as a bullet, so a list still reads as a list once the tags go.
+        text = text.replacingOccurrences(of: "<li[^>]*>", with: "• ", options: [.regularExpression, .caseInsensitive])
 
         text = text.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
 
@@ -626,6 +670,45 @@ enum JobTextFormatting {
         )
 
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The first line with anything on it, for the row a note collapses to.
+    static func firstLine(_ plain: String) -> String? {
+        plain.split(whereSeparator: \.isNewline)
+            .lazy
+            .map { $0.trimmingCharacters(in: CharacterSet.whitespaces.union(CharacterSet(charactersIn: "•-*"))) }
+            .first { !$0.isEmpty }
+    }
+
+    enum Block: Hashable {
+        case paragraph(String)
+        case bullet(String)
+        case fact(label: String, value: String)
+    }
+
+    /// Plain notes as blocks to lay out, one per line.
+    static func blocks(_ plain: String) -> [Block] {
+        plain.split(whereSeparator: \.isNewline).compactMap { raw in
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty else { return nil }
+            for marker in ["• ", "- ", "* "] where line.hasPrefix(marker) {
+                return .bullet(String(line.dropFirst(marker.count)))
+            }
+            return fact(line) ?? .paragraph(line)
+        }
+    }
+
+    /// "Colour: Sage" reads as a label and a value. Only when it's clearly
+    /// that: a short label with a word in it, and a short value, so a sentence
+    /// with a colon in it, a time or a web address stays as it was written.
+    private static func fact(_ line: String) -> Block? {
+        guard let colon = line.firstIndex(of: ":") else { return nil }
+        let label = line[..<colon].trimmingCharacters(in: .whitespaces)
+        let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+        guard !label.isEmpty, label.count <= 24, !value.isEmpty, value.count <= 80,
+              label.contains(where: \.isLetter), label.split(separator: " ").count <= 3,
+              !value.hasPrefix("//") else { return nil }
+        return .fact(label: label, value: value)
     }
 }
 

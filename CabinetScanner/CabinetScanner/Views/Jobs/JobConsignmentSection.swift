@@ -262,42 +262,17 @@ struct JobConsignmentSection: View {
     @State private var confirmingFinish: CourierConsignment?
     @State private var showingRaise = false
 
+    /// With none raised and nothing to report there's nothing to say here: the
+    /// button at the top of the page is the way to raise one.
+    private var hasAnythingToShow: Bool {
+        !viewModel.existing.isEmpty || viewModel.errorMessage != nil || viewModel.finishResult != nil
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PaperSectionHeader("Courier consignment")
-
-            ForEach(viewModel.existing) { consignment in
-                CourierConsignmentRow(
-                    consignment: consignment,
-                    jobId: viewModel.jobId,
-                    isWorking: viewModel.isWorking,
-                    finish: { confirmingFinish = consignment }
-                )
+            if hasAnythingToShow {
+                sectionContent.section()
             }
-
-            if viewModel.existing.isEmpty, viewModel.info != nil {
-                Text("None yet. Raise one from the button at the top of the page.")
-                    .paperType(.subhead)
-                    .foregroundStyle(PaperColor.secondary)
-                    .padding(.vertical, PaperSpace.s)
-            } else if !viewModel.existing.isEmpty {
-                // A second one, for a job shipping in two parts.
-                Button("Raise another consignment") { showingRaise = true }
-                    .buttonStyle(.paperText(PaperColor.ink, .subhead, weight: .semibold))
-                    .disabled(viewModel.isLoading)
-                    .padding(.top, PaperSpace.xs)
-            }
-
-            if let error = viewModel.errorMessage, !showingRaise {
-                Notice(text: error, tone: .soon).padding(.top, PaperSpace.m)
-            }
-
-            if let result = viewModel.finishResult {
-                FinishOutcome(result: result) { viewModel.finishResult = nil }
-                    .padding(.top, PaperSpace.m)
-            }
-
-            footerText.padding(.top, PaperSpace.m)
         }
         .sheet(isPresented: $showingRaise) {
             RaiseConsignmentSheet { _ in showingRaise = false }
@@ -327,18 +302,44 @@ struct JobConsignmentSection: View {
         }
     }
 
-    private var footerText: some View {
-        VStack(alignment: .leading, spacing: PaperSpace.xs) {
-            Text("Boxes are packed against the consignment in the Packing tab.")
-            if viewModel.canCompleteSteps {
-                Text("Finishing it completes Pack & Wrap and then Despatch in ShopVOX.")
-            } else if viewModel.info != nil {
+    private var sectionContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PaperSectionHeader("Courier consignment")
+
+            ForEach(viewModel.existing) { consignment in
+                CourierConsignmentRow(
+                    consignment: consignment,
+                    jobId: viewModel.jobId,
+                    isWorking: viewModel.isWorking,
+                    finish: { confirmingFinish = consignment }
+                )
+            }
+
+            if !viewModel.existing.isEmpty {
+                // A second one, for a job shipping in two parts.
+                Button("Raise another consignment") { showingRaise = true }
+                    .buttonStyle(.paperText(PaperColor.ink, .subhead, weight: .semibold))
+                    .disabled(viewModel.isLoading)
+                    .padding(.top, PaperSpace.xs)
+            }
+
+            if let error = viewModel.errorMessage, !showingRaise {
+                Notice(text: error, tone: .soon).padding(.top, PaperSpace.m)
+            }
+
+            if let result = viewModel.finishResult {
+                FinishOutcome(result: result) { viewModel.finishResult = nil }
+                    .padding(.top, PaperSpace.m)
+            }
+
+            if viewModel.info != nil, !viewModel.canCompleteSteps {
                 Text("This record has no ShopVOX job behind it, so finishing a consignment will not complete any step.")
+                    .paperType(.footnote)
+                    .foregroundStyle(PaperColor.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, PaperSpace.m)
             }
         }
-        .paperType(.footnote)
-        .foregroundStyle(PaperColor.tertiary)
-        .fixedSize(horizontal: false, vertical: true)
     }
 }
 

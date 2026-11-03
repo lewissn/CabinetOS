@@ -3,7 +3,8 @@ import SwiftUI
 
 // MARK: - Jobs Hub
 //
-// Search and the production board share one tab.
+// Search and the two boards (due dates, and the production board's cutting
+// days) share one tab.
 //
 // They were briefly separate tabs, which pushed the app to six and made iOS
 // collapse Stock and Settings behind "More" — burying two screens the team
@@ -11,13 +12,17 @@ import SwiftUI
 // job and browsing what is due are the same task at different levels of
 // specificity, and the search field is where a person's hand goes first.
 //
-// Typing in the search field replaces the board with results; clearing it
+// Typing in the search field replaces the boards with results; clearing it
 // brings the board back. Nothing is lost, and the tab bar stays at five.
 
 struct JobsHubView: View {
     @StateObject private var search = JobSearchViewModel()
     @StateObject private var board = ProductionViewsViewModel()
+    @StateObject private var cuttingBoard = CuttingBoardViewModel()
+    @AppStorage("jobs.board") private var boardMode: BoardMode = .dueDates
     @EnvironmentObject private var router: AppRouter
+    @Environment(\.isTabActive) private var isTabActive
+    @Environment(\.scenePhase) private var scenePhase
 
     /// The navigation stack, held explicitly.
     ///
@@ -31,6 +36,15 @@ struct JobsHubView: View {
     @State private var scanningLabel = false
 
     private var isSearching: Bool { !search.trimmedQuery.isEmpty }
+
+    /// Polled only while somebody can see it.
+    private var isWatchingCuttingBoard: Bool {
+        boardMode == .production && isTabActive && scenePhase == .active && path.isEmpty && !isSearching
+    }
+
+    enum BoardMode: String, Hashable {
+        case dueDates, production
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -46,7 +60,14 @@ struct JobsHubView: View {
                         if isSearching {
                             JobSearchResults(viewModel: search)
                         } else {
-                            ProductionBoard(viewModel: board)
+                            VStack(alignment: .leading, spacing: PaperSpace.l) {
+                                PaperSegmented([(BoardMode.dueDates, "Due dates"), (BoardMode.production, "Production board")],
+                                               selection: $boardMode, accessibilityLabel: "Which board")
+                                switch boardMode {
+                                case .dueDates: DueDatesBoard(viewModel: board)
+                                case .production: CuttingBoardView(viewModel: cuttingBoard)
+                                }
+                            }
                         }
                     }
                     .padding(.top, PaperSpace.l)
@@ -56,7 +77,7 @@ struct JobsHubView: View {
             }
             .scrollDismissesKeyboard(.immediately)
             .refreshable {
-                if !isSearching { await board.load() }
+                if !isSearching { await loadBoard() }
             }
             .paperRootScreen()
             // No `.id()` here. Forcing a new identity does make SwiftUI
@@ -72,7 +93,7 @@ struct JobsHubView: View {
             }
             // A deep link or a tapped notification. Only an id is known.
             .navigationDestination(for: LinkedJob.self) { linked in
-                JobDetailView(jobId: linked.id)
+                JobDetailView(jobId: linked.id, knownTitle: linked.title)
             }
             // A scanned label that carries a sales order rather than an id.
             .navigationDestination(for: SalesOrderLookup.self) { lookup in
@@ -88,6 +109,13 @@ struct JobsHubView: View {
                 )
             }
             .task { await board.load() }
+        }
+        .task(id: isWatchingCuttingBoard) {
+            guard isWatchingCuttingBoard else { return }
+            while !Task.isCancelled {
+                await cuttingBoard.load()
+                try? await Task.sleep(for: .seconds(60))
+            }
         }
         // Attached to the STACK, not to its root content.
         //
@@ -106,10 +134,17 @@ struct JobsHubView: View {
         // the board refreshes, and when a link held through Settings opens.
         .onTabReturn {
             openPendingJob()
-            if !isSearching { await board.load() }
+            if !isSearching { await loadBoard() }
         }
         .onResume {
-            if !isSearching { await board.load() }
+            if !isSearching { await loadBoard() }
+        }
+    }
+
+    private func loadBoard() async {
+        switch boardMode {
+        case .dueDates: await board.load()
+        case .production: await cuttingBoard.load()
         }
     }
 
@@ -150,9 +185,14 @@ struct JobsHubView: View {
 /// the three apart.
 struct LinkedJob: Hashable {
     let id: String
+    /// What to call it while it loads, when the row that opened it knows.
+    var title: String? = nil
 }
 
 /// A job reached by its sales order number, from a scanned label.
 struct SalesOrderLookup: Hashable {
     let salesOrder: String
 }
+
+/// Reports, opened from Today.
+struct ReportsLink: Hashable {}

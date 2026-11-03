@@ -27,6 +27,10 @@ enum JobIndexError: LocalizedError {
     /// The server answered, but has no such route — it is running a build from
     /// before the job index shipped.
     case notDeployed
+    /// As `notDeployed`, for a feature other than job search.
+    case missingRoute(String)
+    /// The server answered with a sentence fit to show the person as it is.
+    case refused(message: String, reason: String?)
     case server(Int)
     case decoding(String)
     case offline
@@ -46,12 +50,16 @@ enum JobIndexError: LocalizedError {
             return "That job is no longer in the index."
         case .notDeployed:
             return "The server does not have job search yet. It needs the latest deploy."
+        case .missingRoute(let feature):
+            return "The server does not have \(feature) yet. It needs the latest deploy."
+        case .refused(let message, _):
+            return message
         case .server(let code):
             return "The server returned an error (\(code))."
         case .decoding(let detail):
             return "The server sent something unexpected. \(detail)"
         case .offline:
-            return "This device is offline. Job search needs Wi-Fi or mobile data."
+            return "This device is offline. This needs Wi-Fi or mobile data."
         case .unreachable:
             return "The Ops server didn't answer. Check the connection, then try again in a minute."
         }
@@ -128,6 +136,19 @@ private struct MarkReadRequest: Encodable {
     let read: Bool?
 }
 
+private struct KitPicksRequest: Encodable {
+    let items: [Item]
+
+    struct Item: Encodable {
+        let key: String
+        let picked: Int
+    }
+}
+
+private struct KitPhotoUploaded: Decodable {
+    let photo: KitPhoto
+}
+
 final class JobIndexService {
 
     private let apiRoot: String
@@ -202,6 +223,10 @@ final class JobIndexService {
         case 404:
             throw missingMeans
         default:
+            // A 503 from a migration not run is said in words worth reading.
+            if let body = try? decoder.decode(APIErrorBody.self, from: data), let message = body.error {
+                throw JobIndexError.refused(message: message, reason: body.reason)
+            }
             throw JobIndexError.server(http.statusCode)
         }
 
@@ -368,6 +393,140 @@ final class JobIndexService {
         }
         // Two ShopVOX writes, each followed by a re-read.
         return try await post(url, body: EmptyBody(), timeout: 90)
+    }
+
+    // MARK: - Fitting kit
+
+    func fittingKit(jobId: String) async throws -> FittingKitResponse {
+        try await get(URL(string: apiRoot + "/job-index/\(escaped(jobId))/kit"),
+                      missingMeans: .missingRoute("fitting kits"))
+    }
+
+    /// Absolute counts, never "+1", so sending a batch twice changes nothing.
+    ///
+    /// A refusal about the batch comes back as a response, for the queue to
+    /// act on. Anything that says nothing about the batch (no connection, the
+    /// server down) throws, and the queue holds on to it.
+    func savePicks(jobId: String, picks: [String: Int]) async throws -> KitPicksResponse {
+        guard let url = URL(string: apiRoot + "/job-index/\(escaped(jobId))/kit/picks") else {
+            throw JobIndexError.notConfigured
+        }
+        var request = try authorisedRequest(url, method: "PUT", timeout: 20)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = try JSONEncoder().encode(
+            KitPicksRequest(items: picks.map { KitPicksRequest.Item(key: $0.key, picked: $0.value) })
+        )
+
+        let (data, http) = try await send(request)
+        try throwIfNoAccessOrDown(http, data: data)
+        do {
+            return try decoder.decode(KitPicksResponse.self, from: data)
+        } catch {
+            throw JobIndexError.server(http.statusCode)
+        }
+    }
+
+    func uploadKitPhoto(jobId: String, jpeg: Data) async throws -> KitPhoto {
+        guard let url = URL(string: apiRoot + "/job-index/\(escaped(jobId))/kit/photos") else {
+            throw JobIndexError.notConfigured
+        }
+        let boundary = "CabinetOS-\(UUID().uuidString)"
+        var body = Data()
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"file\"; filename=\"kit.jpg\"\r\n".utf8))
+        body.append(Data("Content-Type: image/jpeg\r\n\r\n".utf8))
+        body.append(jpeg)
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
+
+        var request = try authorisedRequest(url, method: "POST", timeout: 60)
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = body
+
+        let (data, http) = try await send(request)
+        try throwIfNoAccessOrDown(http, data: data)
+        guard (200...299).contains(http.statusCode) else {
+            let error = try? decoder.decode(APIErrorBody.self, from: data)
+            throw JobIndexError.refused(message: error?.error ?? "The photo wasn't accepted.", reason: error?.reason)
+        }
+        do {
+            return try decoder.decode(KitPhotoUploaded.self, from: data).photo
+        } catch {
+            throw JobIndexError.decoding(error.localizedDescription)
+        }
+    }
+
+    /// Photos are private: there's no public link, so they're fetched with the
+    /// device's token. Built from the ids rather than the `url` in the response,
+    /// so the token can only ever go to this server.
+    func kitPhotoData(jobId: String, photoId: String) async throws -> Data {
+        guard let url = URL(string: apiRoot + "/job-index/\(escaped(jobId))/kit/photos/\(escaped(photoId))") else {
+            throw JobIndexError.notConfigured
+        }
+        let (data, http) = try await send(try authorisedRequest(url, method: "GET", timeout: 30))
+        try throwIfNoAccessOrDown(http, data: data)
+        guard (200...299).contains(http.statusCode) else { throw JobIndexError.server(http.statusCode) }
+        return data
+    }
+
+    func deleteKitPhoto(jobId: String, photoId: String) async throws {
+        guard let url = URL(string: apiRoot + "/job-index/\(escaped(jobId))/kit/photos/\(escaped(photoId))") else {
+            throw JobIndexError.notConfigured
+        }
+        let (data, http) = try await send(try authorisedRequest(url, method: "DELETE", timeout: 20))
+        try throwIfNoAccessOrDown(http, data: data)
+        // A 404 means it has already gone, which is what was asked for.
+        guard (200...299).contains(http.statusCode) || http.statusCode == 404 else {
+            throw JobIndexError.server(http.statusCode)
+        }
+    }
+
+    // MARK: - Stations
+
+    func stations() async throws -> [Station] {
+        let response: StationsResponse = try await get(URL(string: apiRoot + "/stations"),
+                                                       missingMeans: .missingRoute("workshop stations"))
+        return response.stations
+    }
+
+    func stationQueue(id: String) async throws -> StationQueue {
+        try await get(URL(string: apiRoot + "/stations/\(escaped(id))"),
+                      missingMeans: .missingRoute("workshop stations"))
+    }
+
+    // MARK: - Production board
+
+    func productionBoard() async throws -> ProductionBoardResponse {
+        try await get(URL(string: apiRoot + "/board"), missingMeans: .missingRoute("the production board"))
+    }
+
+    // MARK: - Shared by the calls above
+
+    private func escaped(_ component: String) -> String {
+        component.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? component
+    }
+
+    private func authorisedRequest(_ url: URL, method: String, timeout: TimeInterval) throws -> URLRequest {
+        guard let token = Configuration.deviceAPIToken, !token.isEmpty else {
+            throw JobIndexError.noTokenOnDevice
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = timeout
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
+    private func throwIfNoAccessOrDown(_ http: HTTPURLResponse, data: Data) throws {
+        let error = try? decoder.decode(APIErrorBody.self, from: data)
+        if http.statusCode == 401 || http.statusCode == 403 {
+            throw JobIndexError.unauthorised(serverMessage: error?.error, reason: error?.reason)
+        }
+        if http.statusCode >= 500 {
+            if let message = error?.error { throw JobIndexError.refused(message: message, reason: error?.reason) }
+            throw JobIndexError.server(http.statusCode)
+        }
     }
 
     // MARK: - Notifications

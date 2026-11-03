@@ -27,6 +27,8 @@ struct ProofViewerView: View {
     var label: String = "Current proof"
     /// The ShopVOX address, for opening or sharing outside the app.
     var externalURL: String?
+    /// The file, when the page's preview has already fetched it.
+    var preloaded: Data?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
@@ -130,6 +132,12 @@ struct ProofViewerView: View {
     private func load() async {
         state = .loading
 
+        if let preloaded, let document = PDFDocument(data: preloaded) {
+            state = .loaded(document)
+            downloadedFile = try? write(preloaded)
+            return
+        }
+
         let request: URLRequest
         do {
             request = try service.proofRequest(jobId: jobId)
@@ -204,21 +212,141 @@ struct ProofViewerView: View {
     }
 }
 
+// MARK: - First-page preview, on the job page
+
+/// The proof's first page, shown where it can be read at a glance. Tapping it
+/// opens the whole file, which has already been fetched by then.
+///
+/// Rendered from the PDF rather than ShopVOX's thumbnail, which is small and
+/// not there on every job. These are 50–250 KB, so fetching one per job page
+/// costs little.
+struct ProofPreview: View {
+    let jobId: String
+    let label: String
+    /// Hands over the file so the viewer needn't fetch it again; nil if the
+    /// preview couldn't get it.
+    let open: (Data?) -> Void
+
+    private enum LoadState {
+        case loading
+        case loaded(image: UIImage, pages: Int?, data: Data)
+        case failed
+    }
+
+    @State private var state: LoadState = .loading
+    private let service = JobIndexService()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: PaperSpace.s) {
+            switch state {
+            case .loaded(let image, let pages, let data):
+                Button {
+                    open(data)
+                } label: {
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: 320)
+                        .padding(PaperSpace.s)
+                        .background(PaperColor.surface, in: RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(PaperColor.hairline, lineWidth: 1))
+                        .contentShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open the proof")
+                .accessibilityHint(pages.map { Format.count($0, "page") } ?? "")
+
+                if let pages, pages > 1 {
+                    Text("First of \(Format.count(pages, "page")). Tap to see them all.")
+                        .paperType(.footnote, numeric: true)
+                        .foregroundStyle(PaperColor.secondary)
+                }
+
+            case .loading:
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12).fill(PaperColor.segment)
+                    ProgressView().tint(PaperColor.secondary)
+                }
+                .frame(height: 220)
+                .accessibilityLabel("Loading the proof")
+
+            case .failed:
+                // The file may still open, so the way to it stays.
+                Button {
+                    open(nil)
+                } label: {
+                    PaperRow("View proof", detail: label, chevron: true)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .task(id: jobId) { await load() }
+    }
+
+    private func load() async {
+        if case .loaded = state { return }
+        do {
+            let (data, response) = try await URLSession.shared.data(for: service.proofRequest(jobId: jobId))
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                state = .failed
+                return
+            }
+            let rendered = await Task.detached(priority: .userInitiated) { ProofPreview.render(data) }.value
+            if let rendered {
+                state = .loaded(image: rendered.image, pages: rendered.pages, data: data)
+            } else {
+                state = .failed
+            }
+        } catch {
+            if !Task.isCancelled { state = .failed }
+        }
+    }
+
+    private nonisolated static func render(_ data: Data) -> (image: UIImage, pages: Int?)? {
+        if let document = PDFDocument(data: data), let page = document.page(at: 0) {
+            let bounds = page.bounds(for: .mediaBox)
+            // A page saved on its side reports its unrotated size.
+            let isSideways = page.rotation == 90 || page.rotation == 270
+            let size = isSideways ? CGSize(width: bounds.height, height: bounds.width) : bounds.size
+            guard size.width > 0, size.height > 0 else { return nil }
+            let scale = 1400 / max(size.width, size.height)
+            let image = page.thumbnail(of: CGSize(width: size.width * scale, height: size.height * scale), for: .mediaBox)
+            return (image, document.pageCount)
+        }
+        // ShopVOX says a proof is a PDF, but a stored picture can still be shown.
+        return UIImage(data: data).map { ($0, nil) }
+    }
+}
+
 // MARK: - PDFKit bridge
+
+/// Fits the page to the width whenever the width changes. `autoScales` works
+/// this out before a sheet has its final size, which left a landscape plan
+/// opening too large with its right-hand side off the screen. Only on a change
+/// of width, so it doesn't undo the reader's own zoom.
+private final class FitWidthPDFView: PDFView {
+    private var fittedWidth: CGFloat = 0
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds.width > 0, bounds.width != fittedWidth else { return }
+        fittedWidth = bounds.width
+        minScaleFactor = scaleFactorForSizeToFit
+        scaleFactor = scaleFactorForSizeToFit
+    }
+}
 
 private struct PDFDocumentView: UIViewRepresentable {
     let document: PDFDocument
 
     func makeUIView(context: Context) -> PDFView {
-        let view = PDFView()
+        let view = FitWidthPDFView()
+        view.displayMode = .singlePageContinuous
+        view.displayDirection = .vertical
         view.document = document
         // Fit the page on open, then let the reader zoom in as far as useful —
         // these are measured plans, so the detail matters.
-        view.autoScales = true
-        view.displayMode = .singlePageContinuous
-        view.displayDirection = .vertical
         view.maxScaleFactor = 8
-        view.minScaleFactor = view.scaleFactorForSizeToFit
         view.backgroundColor = UIColor(PaperColor.segment)
         view.usePageViewController(false)
         return view
