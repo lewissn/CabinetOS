@@ -274,6 +274,94 @@ actor MockKitStore {
         return KitShortageResponse(ok: true, shortage: nil, shortages: shortages[jobId] ?? [], error: nil, reason: nil)
     }
 
+    // MARK: Stations
+
+    func stations() throws -> [Station] {
+        let body: [String: Any] = ["ok": true, "stations": [
+            ["id": "kit", "label": "Fitting kits", "steps": [FittingKitViewModel.stepName],
+             "hint": "Kits for jobs going out soon. Tick as you pick; the step starts with the first tick."],
+            ["id": "cnc", "label": "CNC", "steps": ["CNC - Manufacture"], "hint": "What's booked to cut."],
+        ]]
+        return try JSONDecoder().decode(StationsResponse.self, from: JSONSerialization.data(withJSONObject: body)).stations
+    }
+
+    /// A morning at the kit station: one being picked, two going out today,
+    /// one short, one not at kits yet, one with nothing to pick.
+    func stationQueue(id: String) throws -> StationQueue {
+        let cal = Calendar.london
+        func day(_ offset: Int) -> String {
+            let date = cal.date(byAdding: .day, value: offset, to: Date())!
+            let f = DateFormatter()
+            f.calendar = cal
+            f.timeZone = cal.timeZone
+            f.dateFormat = "yyyy-MM-dd"
+            return f.string(from: date)
+        }
+        func allow(_ action: String, _ allowed: Bool, _ reason: String? = nil) -> [String: Any] {
+            var out: [String: Any] = ["action": action, "allowed": allowed]
+            if let reason { out["reason"] = reason }
+            return out
+        }
+        func progress(_ jobId: String) throws -> [String: Any]? {
+            let kit = try kit(jobId: jobId)
+            guard let picking = kit.picking else { return nil }
+            return [
+                "items": picking.counts.items, "done": picking.counts.done,
+                "unitsRequired": picking.counts.unitsRequired, "unitsPicked": picking.counts.unitsPicked,
+                "complete": picking.complete, "started": picking.started,
+                "shortages": (kit.shortages ?? []).map { ["key": $0.key, "label": $0.label ?? $0.key, "short": $0.short] },
+                "photos": kit.photos.count,
+            ]
+        }
+        func job(_ jobId: String, _ customer: String, so: String, due: Int, state: String, carrier: String = "APC",
+                 startedAt: String? = nil, nowAt: String? = nil, picked: [String: Int]? = nil, noKit: Bool = false) throws -> [String: Any] {
+            if let picked, self.picks[jobId] == nil {
+                self.picks[jobId] = picked
+                self.shortages[jobId] = []
+            }
+            var out: [String: Any] = [
+                "jobId": jobId, "customer": customer, "salesOrderNumber": so, "despatchDate": day(due),
+                "carrier": carrier, "stepName": FittingKitViewModel.stepName, "shopvoxStepId": "step-\(jobId)", "state": state,
+                "actions": ["start": allow("start", state != "started" && state != "pending", state == "pending" ? "Not at kits yet." : nil),
+                            "stop": allow("stop", state == "started"),
+                            "complete": allow("complete", state != "pending", state == "pending" ? "Not at kits yet." : nil)],
+            ]
+            if let startedAt { out["startedAt"] = startedAt; out["startedBy"] = "device:kit-ipad" }
+            if let nowAt { out["nowAt"] = nowAt }
+            if noKit {
+                out["kit"] = ["state": "not_needed", "label": "No fitting kit", "detail": "Hinge holes only: nothing to pack."]
+                out["autoComplete"] = ["outcome": "waiting", "reason": "Completes after Pack & Wrap."]
+            } else {
+                out["kit"] = ["state": "needed", "label": "Fitting kit", "detail": "From the fittings list."]
+                out["progress"] = try progress(jobId)
+            }
+            return out
+        }
+
+        let inProgress = [try job("mock-job", "Danielle Tucker", so: "12056", due: 0, state: "started",
+                                  startedAt: Self.iso(Date().addingTimeInterval(-40 * 60)))]
+        let ready = [
+            try job("mock-okafor", "R. Okafor", so: "12071", due: 0, state: "ready", picked: [:]),
+            try job("mock-hughes", "Hughes Kitchens", so: "12080", due: 1, state: "paused", carrier: "Own van",
+                    picked: ["DRAWER_RUNNER_500": 6, "HINGE_110": 12, "unmapped:LED STRIP 1M": 2]),
+            try job("mock-patel", "M. Patel", so: "12077", due: 2, state: "paused"),
+            try job("mock-byrne", "J. Byrne", so: "12093", due: 3, state: "pending", nowAt: "Sanding", picked: [:]),
+        ]
+        let noKit = [try job("mock-shah", "A. Shah", so: "12088", due: 1, state: "ready", noKit: true)]
+        let body: [String: Any] = [
+            "ok": true,
+            "station": ["id": "kit", "label": "Fitting kits", "steps": [FittingKitViewModel.stepName],
+                        "hint": "Kits for jobs going out soon. Tick as you pick; the step starts with the first tick."],
+            "inProgress": id == "kit" ? inProgress : [],
+            "ready": id == "kit" ? ready : [],
+            "booked": [] as [[String: Any]],
+            "noKit": id == "kit" ? noKit : [],
+            "noKitMode": "trial",
+            "notes": [] as [String],
+        ]
+        return try JSONDecoder().decode(StationQueue.self, from: JSONSerialization.data(withJSONObject: body))
+    }
+
     private func refusal(_ error: String, reason: String) -> KitShortageResponse {
         KitShortageResponse(ok: false, shortage: nil, shortages: nil, error: error, reason: reason)
     }

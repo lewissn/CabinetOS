@@ -22,11 +22,16 @@ final class FittingKitViewModel: ObservableObject {
     @Published private(set) var detail: JobDetail?
     @Published private(set) var isMovingStep = false
     @Published var outcome: StepActionOutcome?
+    /// Bumped when Finish succeeds, for the screen around the kit to react.
+    @Published private(set) var finishedCount = 0
 
     let jobId: String
     private let service: JobIndexService
     private let queue = KitPickQueue.shared
     private var tapIds = StepTapIds()
+    /// Starting the step on the first tick is tried once per visit, so a
+    /// refusal isn't asked again with every tick.
+    private var triedAutoStart = false
 
     init(jobId: String, service: JobIndexService = JobIndexService()) {
         self.jobId = jobId
@@ -34,6 +39,13 @@ final class FittingKitViewModel: ObservableObject {
     }
 
     var kitStep: JobStep? { detail?.steps.first { $0.name == Self.stepName } }
+
+    /// Read again while the kit is open, so ticks from another device show.
+    /// Nothing is read while a change is still on its way.
+    func refresh() async {
+        guard !isLoading, !isMovingStep, queue.waitingCount(jobId: jobId) == 0 else { return }
+        await load()
+    }
 
     func load() async {
         isLoading = true
@@ -62,11 +74,23 @@ final class FittingKitViewModel: ObservableObject {
     func toggle(_ item: KitPickItem) {
         HapticService.light()
         queue.set(jobId: jobId, key: item.key, picked: item.done ? 0 : item.required)
+        if !item.done { startOnFirstTick() }
     }
 
     func setCount(_ picked: Int, for item: KitPickItem) {
         HapticService.light()
         queue.set(jobId: jobId, key: item.key, picked: max(0, picked))
+        if picked > item.picked { startOnFirstTick() }
+    }
+
+    /// Picking is the work, so the first tick starts the ShopVOX step and its
+    /// clock, the way pressing Start would. Only from ready (or paused), never
+    /// a job that hasn't reached kits yet, and the tick itself never waits on it.
+    private func startOnFirstTick() {
+        guard !triedAutoStart, let step = kitStep, step.isActionable, !step.isActive, !step.isComplete,
+              step.action(.start)?.allowed == true else { return }
+        triedAutoStart = true
+        Task { await perform(.start) }
     }
 
     func takenOut(_ orphan: KitOrphan) {
@@ -185,6 +209,7 @@ final class FittingKitViewModel: ObservableObject {
         }
         isMovingStep = false
         if let job = try? await service.jobDetail(id: jobId) { detail = job }
+        if action == .complete, outcome?.isSuccess == true { finishedCount += 1 }
     }
 
     private func successMessage(_ action: StepActionKind, _ response: StepActionResponse) -> String {

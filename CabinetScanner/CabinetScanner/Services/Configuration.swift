@@ -7,7 +7,14 @@ enum APIMode: String {
 
 struct Configuration {
     // MARK: - Toggle this to switch between mock and live API
+    // Debug builds launched with -CabinetMockAPI start in mock mode, for
+    // trying screens in the simulator. Mock mode still reaches the live
+    // server for anything MockAPIService and MockKitStore don't cover.
+    #if DEBUG
+    static var apiMode: APIMode = ProcessInfo.processInfo.arguments.contains("-CabinetMockAPI") ? .mock : .live
+    #else
     static var apiMode: APIMode = .live
+    #endif
 
     // MARK: - Ops API Host
     // Dev:  http://localhost:3000

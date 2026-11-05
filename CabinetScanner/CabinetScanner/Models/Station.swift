@@ -27,12 +27,24 @@ struct StationQueue: Decodable {
     let ready: [StationJob]
     /// CNC only: booked to cut today or earlier, step not ready in ShopVOX yet.
     let booked: [StationJob]
+    /// Fitting kits only: waiting jobs with nothing to pick. Nil from a server
+    /// that predates them.
+    let noKit: [StationJob]?
+    /// "on": those steps complete by themselves after Pack & Wrap. "trial":
+    /// nothing is written yet.
+    let noKitMode: String?
     let notes: [String]
 
-    var isEmpty: Bool { inProgress.isEmpty && ready.isEmpty && booked.isEmpty }
+    var isEmpty: Bool { inProgress.isEmpty && ready.isEmpty && booked.isEmpty && (noKit ?? []).isEmpty }
+
+    var allJobs: [StationJob] { inProgress + ready + booked + (noKit ?? []) }
 
     func job(salesOrder: String) -> StationJob? {
-        (inProgress + ready + booked).first { $0.salesOrderNumber == salesOrder }
+        allJobs.first { $0.salesOrderNumber == salesOrder }
+    }
+
+    func job(jobId: String) -> StationJob? {
+        allJobs.first { $0.jobId == jobId }
     }
 }
 
@@ -54,7 +66,23 @@ struct StationJob: Decodable, Identifiable, Hashable {
     let cutDay: String?
     let areaM2: Double?
     let parts: Int?
+    /// The step the job has reached, when this station's step hasn't come up
+    /// yet (fitting kits due out soon).
+    let nowAt: String?
+    /// Fitting kits only: whether the job goes out with a kit.
+    let kit: KitNeed?
+    /// On the no-kit list: what happens to its ShopVOX step.
+    let autoComplete: AutoComplete?
+    /// Fitting kits only: how far picking has got. Nil with no kit list, or
+    /// from a server that predates it.
+    let progress: KitProgress?
     let actions: Actions
+
+    struct AutoComplete: Decodable, Hashable {
+        /// "complete", "waiting" or "held".
+        let outcome: String
+        let reason: String
+    }
 
     struct Actions: Decodable, Hashable {
         let start: StepActionAvailability
@@ -66,6 +94,8 @@ struct StationJob: Decodable, Identifiable, Hashable {
 
     var isRunning: Bool { state == "started" }
     var isHalted: Bool { state == "paused" || state == "idling" || state == "stopped" }
+    /// Not reached this station yet: listed because it's due out soon.
+    var isPending: Bool { state == "pending" }
 
     var displayName: String { customer ?? salesOrderNumber.map { "SO \($0)" } ?? "This job" }
 

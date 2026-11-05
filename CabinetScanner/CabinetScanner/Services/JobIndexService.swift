@@ -543,13 +543,15 @@ final class JobIndexService {
     // MARK: - Stations
 
     func stations() async throws -> [Station] {
+        if Configuration.isMock { return try await MockKitStore.shared.stations() }
         let response: StationsResponse = try await get(URL(string: apiRoot + "/stations"),
                                                        missingMeans: .missingRoute("workshop stations"))
         return response.stations
     }
 
     func stationQueue(id: String) async throws -> StationQueue {
-        try await get(URL(string: apiRoot + "/stations/\(escaped(id))"),
+        if Configuration.isMock { return try await MockKitStore.shared.stationQueue(id: id) }
+        return try await get(URL(string: apiRoot + "/stations/\(escaped(id))"),
                       missingMeans: .missingRoute("workshop stations"))
     }
 

@@ -22,9 +22,11 @@ struct FittingKitResponse: Decodable {
     let shortages: [KitShortage]?
     /// A sentence to show as it is: shortages couldn't be read.
     let shortagesProblem: String?
+    /// Whether the job goes out with a kit at all. Nil from an older server.
+    let need: KitNeed?
 
     private enum CodingKeys: String, CodingKey {
-        case ok, kit, kitProblem, picking, photos, pickingProblem, shortages, shortagesProblem
+        case ok, kit, kitProblem, picking, photos, pickingProblem, shortages, shortagesProblem, need
     }
 
     init(from decoder: Decoder) throws {
@@ -39,7 +41,42 @@ struct FittingKitResponse: Decodable {
         // kit itself from loading.
         shortages = try? c.decodeIfPresent([KitShortage].self, forKey: .shortages)
         shortagesProblem = try? c.decodeIfPresent(String.self, forKey: .shortagesProblem)
+        need = try? c.decodeIfPresent(KitNeed.self, forKey: .need)
     }
+}
+
+/// Whether a job goes out with a fitting kit: what despatch decides the kit
+/// box label by.
+struct KitNeed: Decodable, Hashable {
+    /// "needed", "not_needed" or "check" (a person should look).
+    let state: String
+    /// "No fitting kit"
+    let label: String
+    /// Why, in a sentence, to show as it is.
+    let detail: String
+
+    var isNotNeeded: Bool { state == "not_needed" }
+}
+
+/// How far a kit has got, on each job in the kit station's queue.
+struct KitProgress: Decodable, Hashable {
+    let items: Int
+    let done: Int
+    let unitsRequired: Int
+    let unitsPicked: Int
+    let complete: Bool
+    let started: Bool
+    let shortages: [Short]
+    let photos: Int
+    let lastChange: KitPicking.LastChange?
+
+    struct Short: Decodable, Hashable {
+        let key: String
+        let label: String
+        let short: Int
+    }
+
+    var fraction: Double { items > 0 ? Double(done) / Double(items) : 0 }
 }
 
 struct FittingKit: Decodable {
@@ -83,7 +120,7 @@ struct KitPicking: Decodable {
         let unitsPicked: Int
     }
 
-    struct LastChange: Decodable {
+    struct LastChange: Decodable, Hashable {
         let by: String
         let at: String
     }
