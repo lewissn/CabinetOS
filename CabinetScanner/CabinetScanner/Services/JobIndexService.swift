@@ -145,6 +145,13 @@ private struct KitPicksRequest: Encodable {
     }
 }
 
+private struct KitShortageRequest: Encodable {
+    let key: String
+    let short: Int
+    /// Left out of the JSON when nil.
+    let note: String?
+}
+
 private struct KitPhotoUploaded: Decodable {
     let photo: KitPhoto
 }
@@ -398,7 +405,8 @@ final class JobIndexService {
     // MARK: - Fitting kit
 
     func fittingKit(jobId: String) async throws -> FittingKitResponse {
-        try await get(URL(string: apiRoot + "/job-index/\(escaped(jobId))/kit"),
+        if Configuration.isMock { return try await MockKitStore.shared.kit(jobId: jobId) }
+        return try await get(URL(string: apiRoot + "/job-index/\(escaped(jobId))/kit"),
                       missingMeans: .missingRoute("fitting kits"))
     }
 
@@ -408,6 +416,7 @@ final class JobIndexService {
     /// act on. Anything that says nothing about the batch (no connection, the
     /// server down) throws, and the queue holds on to it.
     func savePicks(jobId: String, picks: [String: Int]) async throws -> KitPicksResponse {
+        if Configuration.isMock { return try await MockKitStore.shared.savePicks(jobId: jobId, picks: picks) }
         guard let url = URL(string: apiRoot + "/job-index/\(escaped(jobId))/kit/picks") else {
             throw JobIndexError.notConfigured
         }
@@ -423,6 +432,55 @@ final class JobIndexService {
         do {
             return try decoder.decode(KitPicksResponse.self, from: data)
         } catch {
+            throw JobIndexError.server(http.statusCode)
+        }
+    }
+
+    /// "Not enough of this on the shelf." Reporting the same item again updates
+    /// its open shortage, so a retry is safe.
+    ///
+    /// A refusal (`not_on_kit`, `no_kit`, `bad_shortage`) comes back as a
+    /// response; no connection, no access or the server down (including
+    /// `not_set_up`, a 503) throws.
+    func reportShortage(jobId: String, key: String, short: Int, note: String?) async throws -> KitShortageResponse {
+        if Configuration.isMock {
+            return await MockKitStore.shared.reportShortage(jobId: jobId, key: key, short: short, note: note)
+        }
+        guard let url = URL(string: apiRoot + "/job-index/\(escaped(jobId))/kit/shortages") else {
+            throw JobIndexError.notConfigured
+        }
+        var request = try authorisedRequest(url, method: "POST", timeout: 20)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = try JSONEncoder().encode(KitShortageRequest(key: key, short: short, note: note))
+
+        let (data, http) = try await send(request)
+        return try shortageResponse(http, data: data)
+    }
+
+    /// Take a shortage back. A 404 `not_open` means it had already closed,
+    /// which also comes back as a response.
+    func clearShortage(jobId: String, shortageId: String) async throws -> KitShortageResponse {
+        if Configuration.isMock {
+            return await MockKitStore.shared.clearShortage(jobId: jobId, shortageId: shortageId)
+        }
+        guard let url = URL(string: apiRoot + "/job-index/\(escaped(jobId))/kit/shortages/\(escaped(shortageId))") else {
+            throw JobIndexError.notConfigured
+        }
+        var request = try authorisedRequest(url, method: "DELETE", timeout: 20)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, http) = try await send(request)
+        return try shortageResponse(http, data: data)
+    }
+
+    private func shortageResponse(_ http: HTTPURLResponse, data: Data) throws -> KitShortageResponse {
+        try throwIfNoAccessOrDown(http, data: data)
+        do {
+            return try decoder.decode(KitShortageResponse.self, from: data)
+        } catch {
+            // No JSON at all on a 404: a server from before shortages.
+            if http.statusCode == 404 { throw JobIndexError.missingRoute("kit shortages") }
             throw JobIndexError.server(http.statusCode)
         }
     }
