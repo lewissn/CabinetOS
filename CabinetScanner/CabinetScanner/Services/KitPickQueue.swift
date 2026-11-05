@@ -20,6 +20,9 @@ final class KitPickQueue: ObservableObject {
     /// Bumped when the server says a job's kit has changed, so an open screen
     /// knows to read it again.
     @Published private(set) var kitChanges: [String: Int] = [:]
+    /// Bumped when ticks closed one of a job's shortages, so an open screen
+    /// reads them again.
+    @Published private(set) var shortageChanges: [String: Int] = [:]
 
     private let service = JobIndexService()
     private let defaults = UserDefaults.standard
@@ -117,6 +120,9 @@ final class KitPickQueue: ObservableObject {
                 if let state = response.picking {
                     picking[jobId] = state
                     revisions[jobId, default: 0] += 1
+                }
+                if let resolved = response.shortagesResolved, resolved > 0 {
+                    shortageChanges[jobId, default: 0] += 1
                 }
                 continue
             }

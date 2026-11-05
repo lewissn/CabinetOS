@@ -13,6 +13,11 @@ final class FittingKitViewModel: ObservableObject {
     @Published private(set) var photos: [KitPhoto] = []
     @Published private(set) var isUploading = false
     @Published private(set) var photoProblem: String?
+    /// Open "not enough on the shelf" reports, one per item at most.
+    @Published private(set) var shortages: [KitShortage] = []
+    /// Why clearing a shortage didn't work. Reporting shows its own problems
+    /// in its sheet.
+    @Published private(set) var shortageProblem: String?
     /// For the job's name and its fitting kit step.
     @Published private(set) var detail: JobDetail?
     @Published private(set) var isMovingStep = false
@@ -39,6 +44,7 @@ final class FittingKitViewModel: ObservableObject {
             let fresh = try await kit
             response = fresh
             photos = fresh.photos
+            shortages = fresh.shortages ?? []
             queue.adopt(fresh.picking, jobId: jobId, readAtRevision: readAt)
             errorMessage = nil
         } catch {
@@ -66,6 +72,62 @@ final class FittingKitViewModel: ObservableObject {
     func takenOut(_ orphan: KitOrphan) {
         HapticService.light()
         queue.set(jobId: jobId, key: orphan.key, picked: 0)
+    }
+
+    // MARK: - Shortages
+
+    func shortage(for item: KitPickItem) -> KitShortage? {
+        shortages.first { $0.key == item.key }
+    }
+
+    /// Nil once the server has it; otherwise the sentence to show.
+    func reportShortage(_ item: KitPickItem, short: Int, note: String?) async -> String? {
+        do {
+            let response = try await service.reportShortage(jobId: jobId, key: item.key, short: short, note: note)
+            if response.ok {
+                HapticService.success()
+                if let open = response.shortages {
+                    shortages = open
+                } else if let reported = response.shortage {
+                    shortages.removeAll { $0.key == reported.key }
+                    shortages.append(reported)
+                }
+                shortageProblem = nil
+                return nil
+            }
+            HapticService.error()
+            // The fittings list changed under the picker: show them the new one.
+            if response.reason == "not_on_kit" || response.reason == "no_kit" { await load() }
+            return response.error ?? "The shortage wasn't recorded. Try again."
+        } catch {
+            HapticService.error()
+            return (error as? JobIndexError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    func clearShortage(_ shortage: KitShortage) async {
+        do {
+            let response = try await service.clearShortage(jobId: jobId, shortageId: shortage.id)
+            if response.ok {
+                HapticService.light()
+                if let open = response.shortages {
+                    shortages = open
+                } else {
+                    shortages.removeAll { $0.id == shortage.id }
+                }
+                shortageProblem = nil
+            } else if response.reason == "not_open" {
+                // Already closed, which is what was asked for.
+                shortageProblem = nil
+                await load()
+            } else {
+                HapticService.error()
+                shortageProblem = response.error ?? "The shortage wasn't cleared. Try again."
+            }
+        } catch {
+            HapticService.error()
+            shortageProblem = (error as? JobIndexError)?.errorDescription ?? error.localizedDescription
+        }
     }
 
     // MARK: - Photos

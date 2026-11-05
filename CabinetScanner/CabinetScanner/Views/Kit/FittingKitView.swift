@@ -16,7 +16,8 @@ struct FittingKitView: View {
 
     @StateObject private var viewModel: FittingKitViewModel
     @ObservedObject private var queue = KitPickQueue.shared
-    @State private var countingItem: KitPickItem?
+    @State private var itemSheet: KitItemSheet?
+    @State private var clearingShortage: KitShortage?
     @State private var viewingPhoto: KitPhoto?
     @State private var showingCamera = false
     @State private var showingLibrary = false
@@ -59,14 +60,42 @@ struct FittingKitView: View {
         .onChange(of: queue.kitChanges[jobId]) { _, _ in
             Task { await viewModel.load() }
         }
+        // Ticks closed a shortage: read the open ones again.
+        .onChange(of: queue.shortageChanges[jobId]) { _, _ in
+            Task { await viewModel.load() }
+        }
         .safeAreaInset(edge: .bottom) {
             if let outcome = viewModel.outcome {
                 StepActionBanner(result: outcome) { viewModel.outcome = nil }
             }
         }
-        .sheet(item: $countingItem) { item in
-            KitCountSheet(item: item) { viewModel.setCount($0, for: item) }
-                .paperSheet(detents: [.medium, .large])
+        // One sheet for both, so "Not enough" in the count sheet swaps it for
+        // the shortage sheet.
+        .sheet(item: $itemSheet) { sheet in
+            switch sheet {
+            case .count(let item):
+                KitCountSheet(item: item,
+                              onSet: { viewModel.setCount($0, for: item) },
+                              onNotEnough: { itemSheet = .shortage(item) })
+                    .paperSheet(detents: [.medium, .large])
+            case .shortage(let item):
+                KitShortageSheet(item: item, existing: viewModel.shortage(for: item)) { short, note in
+                    await viewModel.reportShortage(item, short: short, note: note)
+                }
+                .paperSheet(detents: [.large])
+            }
+        }
+        .confirmationDialog(clearTitle,
+                            isPresented: Binding(get: { clearingShortage != nil },
+                                                 set: { if !$0 { clearingShortage = nil } }),
+                            titleVisibility: .visible,
+                            presenting: clearingShortage) { shortage in
+            Button("Clear shortage", role: .destructive) {
+                Task { await viewModel.clearShortage(shortage) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("It comes off Cabinet Lab. Ticking the item as fully picked clears it too.")
         }
         .sheet(item: $viewingPhoto) { photo in
             KitPhotoSheet(jobId: jobId, photo: photo, jobName: jobName) {
@@ -103,6 +132,12 @@ struct FittingKitView: View {
         if viewModel.photos.isEmpty { parts.append("No photo has been added.") }
         parts.append("This marks the step done in ShopVOX. It can't be undone from the app.")
         return parts.joined(separator: " ")
+    }
+
+    private var clearTitle: String {
+        guard let shortage = clearingShortage else { return "Clear this shortage?" }
+        let name = shortage.label ?? picking?.items.first(where: { $0.key == shortage.key })?.label ?? "this item"
+        return "Clear the shortage of \(name)?"
     }
 
     private func finish() {
@@ -154,6 +189,12 @@ struct FittingKitView: View {
             Notice(text: problem, tone: .soon).section(top: PaperSpace.l)
         }
         if let problem = response.pickingProblem {
+            Notice(text: problem, tone: .soon).section(top: PaperSpace.l)
+        }
+        if let problem = response.shortagesProblem {
+            Notice(text: problem, tone: .soon).section(top: PaperSpace.l)
+        }
+        if let problem = viewModel.shortageProblem {
             Notice(text: problem, tone: .soon).section(top: PaperSpace.l)
         }
         sendState
@@ -246,8 +287,11 @@ struct FittingKitView: View {
                 }
                 ForEach(group.items) { item in
                     KitItemRow(item: item,
+                               shortage: viewModel.shortage(for: item),
                                toggle: { viewModel.toggle(item) },
-                               count: { countingItem = item })
+                               count: { itemSheet = .count(item) },
+                               notEnough: { itemSheet = .shortage(item) },
+                               clearShortage: { clearingShortage = $0 })
                 }
             }
             .section(top: PaperSpace.xxl)
@@ -409,17 +453,56 @@ struct FittingKitView: View {
 
 // MARK: - A line on the list
 
+/// Which item sheet is up. Changing it while one is showing replaces it.
+private enum KitItemSheet: Identifiable {
+    case count(KitPickItem)
+    case shortage(KitPickItem)
+
+    var id: String {
+        switch self {
+        case .count(let item): "count:\(item.key)"
+        case .shortage(let item): "shortage:\(item.key)"
+        }
+    }
+}
+
 private struct KitItemRow: View {
     let item: KitPickItem
+    let shortage: KitShortage?
     let toggle: () -> Void
     let count: () -> Void
+    let notEnough: () -> Void
+    let clearShortage: (KitShortage) -> Void
 
     private var checkState: PaperCheck.State {
         if item.done { return .done }
         return item.picked > 0 ? .active : .open
     }
 
+    /// Once it's all picked the shortage has closed, or will when the tick lands.
+    private var openShortage: KitShortage? { item.done ? nil : shortage }
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            mainLine
+            if let openShortage {
+                shortageLine(openShortage)
+                    // Lined up with the label, past the check.
+                    .padding(.leading, 30 + PaperSpace.m)
+                    .padding(.bottom, PaperSpace.s)
+            }
+        }
+        .padding(.vertical, PaperSpace.xs)
+        .overlay(alignment: .bottom) { PaperHairline(color: PaperColor.hairlineSoft) }
+        .contextMenu {
+            Button(openShortage == nil ? "Not enough on the shelf" : "Change the shortage", action: notEnough)
+            if let openShortage {
+                Button("Clear shortage", role: .destructive) { clearShortage(openShortage) }
+            }
+        }
+    }
+
+    private var mainLine: some View {
         HStack(spacing: PaperSpace.m) {
             Button(action: toggle) {
                 HStack(spacing: PaperSpace.m) {
@@ -456,8 +539,28 @@ private struct KitItemRow: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Change the count for \(item.label)")
         }
-        .padding(.vertical, PaperSpace.xs)
-        .overlay(alignment: .bottom) { PaperHairline(color: PaperColor.hairlineSoft) }
+    }
+
+    /// "Waiting on 4 more: reported by kit-ipad, Thu 16 Oct 11:30"
+    private func shortageLine(_ shortage: KitShortage) -> some View {
+        let when = DateFormatters.parseISO8601(shortage.reportedAt).map { Format.when($0) }
+        let reported = ["reported by \(shortage.reportedBy)", when].compactMap { $0 }.joined(separator: ", ")
+        return VStack(alignment: .leading, spacing: 2) {
+            StatusText("Waiting on \(PaperFormat.int(shortage.short)) more: \(reported)", tone: .held, lineLimit: nil)
+            if let note = shortage.note, !note.isEmpty {
+                Text(note)
+                    .paperType(.footnote)
+                    .foregroundStyle(PaperColor.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: PaperSpace.s) {
+                Button("Change", action: notEnough)
+                    .buttonStyle(.paperPill(.outline, .compact))
+                Button("Clear") { clearShortage(shortage) }
+                    .buttonStyle(.paperPill(.outline, .compact))
+            }
+            .padding(.top, PaperSpace.xs)
+        }
     }
 }
 
@@ -485,13 +588,15 @@ enum KitCategory {
 private struct KitCountSheet: View {
     let item: KitPickItem
     let onSet: (Int) -> Void
+    let onNotEnough: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var text: String
 
-    init(item: KitPickItem, onSet: @escaping (Int) -> Void) {
+    init(item: KitPickItem, onSet: @escaping (Int) -> Void, onNotEnough: @escaping () -> Void) {
         self.item = item
         self.onSet = onSet
+        self.onNotEnough = onNotEnough
         // Empty rather than "0", so typing 3 doesn't read "03".
         _text = State(initialValue: item.picked > 0 ? String(item.picked) : "")
     }
@@ -534,8 +639,124 @@ private struct KitCountSheet: View {
                     }
                     .buttonStyle(.paperPill(.outline, .regular, fullWidth: true))
                 }
+
+                // Swaps this sheet for the shortage one, so no dismiss here.
+                Button("Not enough on the shelf", action: onNotEnough)
+                    .buttonStyle(.paperText(PaperColor.ink, .subhead, weight: .medium))
             }
             .padding(.top, PaperSpace.m)
+        }
+    }
+}
+
+// MARK: - Not enough on the shelf
+
+private struct KitShortageSheet: View {
+    let item: KitPickItem
+    let existing: KitShortage?
+    /// Nil once the server has it; otherwise the sentence to show.
+    let onReport: (Int, String?) async -> String?
+
+    private static let noteLimit = 500
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var text: String
+    @State private var note: String
+    @State private var isSending = false
+    @State private var problem: String?
+
+    init(item: KitPickItem, existing: KitShortage?, onReport: @escaping (Int, String?) async -> String?) {
+        self.item = item
+        self.existing = existing
+        self.onReport = onReport
+        _text = State(initialValue: String(existing?.short ?? max(1, item.required - item.picked)))
+        _note = State(initialValue: existing?.note ?? "")
+    }
+
+    private var value: Int? {
+        guard let n = Int(text.trimmingCharacters(in: .whitespaces)), n >= 1 else { return nil }
+        return n
+    }
+
+    private var reportedLine: String? {
+        guard let existing else { return nil }
+        let when = DateFormatters.parseISO8601(existing.reportedAt).map { Format.when($0) }
+        let by = ["Reported by \(existing.reportedBy)", when].compactMap { $0 }.joined(separator: ", ")
+        return "\(by). Sending again updates it."
+    }
+
+    var body: some View {
+        SheetScreen(item.label) {
+            EmptyView()
+        } content: {
+            VStack(alignment: .leading, spacing: PaperSpace.l) {
+                Text("How many more are needed? The kit needs \(PaperFormat.int(item.required)) and \(PaperFormat.int(item.picked)) have been picked.")
+                    .paperType(.subhead, numeric: true)
+                    .foregroundStyle(PaperColor.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let reportedLine {
+                    StatusText(reportedLine, tone: .held, lineLimit: nil)
+                }
+
+                PaperHeroField(text: $text, unit: "more", accessibilityLabel: "Number more needed")
+                    .keyboardType(.numberPad)
+                    .onChange(of: text) { _, new in
+                        let digits = new.filter(\.isNumber)
+                        if digits != new { text = digits }
+                    }
+
+                VStack(alignment: .leading, spacing: PaperSpace.xs) {
+                    PaperLabel("Note (optional)")
+                    TextField("e.g. only 2 in the box", text: $note, axis: .vertical)
+                        .paperType(.body)
+                        .foregroundStyle(PaperColor.ink)
+                        .lineLimit(2...5)
+                        .padding(.bottom, PaperSpace.xs)
+                        .overlay(alignment: .bottom) { Rectangle().fill(PaperColor.dot).frame(height: 1) }
+                        .accessibilityLabel("Note")
+                        .onChange(of: note) { _, new in
+                            if new.count > Self.noteLimit { note = String(new.prefix(Self.noteLimit)) }
+                        }
+                }
+
+                if let problem {
+                    Notice(text: problem, tone: .held)
+                }
+
+                Button {
+                    send()
+                } label: {
+                    if isSending {
+                        ProgressView().tint(PaperColor.onAccent)
+                    } else {
+                        Text(existing == nil ? "Report shortage" : "Update shortage")
+                    }
+                }
+                .buttonStyle(.paperPill(.accent, .floor, fullWidth: true))
+                .disabled(value == nil || isSending)
+
+                Text("It shows on Cabinet Lab so it gets ordered, and here for the next picker. It clears itself when the item is ticked as fully picked.")
+                    .paperType(.footnote)
+                    .foregroundStyle(PaperColor.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, PaperSpace.m)
+        }
+    }
+
+    private func send() {
+        guard let value, !isSending else { return }
+        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        isSending = true
+        problem = nil
+        Task {
+            if let failed = await onReport(value, trimmed.isEmpty ? nil : trimmed) {
+                problem = failed
+                isSending = false
+            } else {
+                dismiss()
+            }
         }
     }
 }
@@ -716,6 +937,7 @@ struct FittingKitSection: View {
         var parts = [picking.complete
             ? "All \(Format.count(picking.counts.items, "item")) picked"
             : "\(PaperFormat.int(picking.counts.done)) of \(Format.count(picking.counts.items, "item")) picked"]
+        if let open = response.shortages, !open.isEmpty { parts.append("\(PaperFormat.int(open.count)) short") }
         if !response.photos.isEmpty { parts.append(Format.count(response.photos.count, "photo")) }
         return parts.joined(separator: " · ")
     }
@@ -735,3 +957,21 @@ struct FittingKitSection: View {
         }
     }
 }
+
+#if DEBUG
+/// The kit screen against MockKitStore, so the shortage line and sheet can be
+/// seen without a server or a device token.
+private struct MockFittingKitPreview: View {
+    init() { Configuration.apiMode = .mock }
+
+    var body: some View {
+        NavigationStack {
+            FittingKitView(jobId: "mock-job", jobTitle: "Sample customer")
+        }
+    }
+}
+
+#Preview("Fitting kit, with a shortage (mock)") {
+    MockFittingKitPreview()
+}
+#endif

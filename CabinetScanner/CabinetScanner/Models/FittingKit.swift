@@ -17,6 +17,29 @@ struct FittingKitResponse: Decodable {
     let photos: [KitPhoto]
     /// A sentence to show as it is, e.g. the migration hasn't been run.
     let pickingProblem: String?
+    /// The open "not enough on the shelf" reports. Nil from a server that
+    /// predates shortages.
+    let shortages: [KitShortage]?
+    /// A sentence to show as it is: shortages couldn't be read.
+    let shortagesProblem: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case ok, kit, kitProblem, picking, photos, pickingProblem, shortages, shortagesProblem
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try c.decode(Bool.self, forKey: .ok)
+        kit = try c.decodeIfPresent(FittingKit.self, forKey: .kit)
+        kitProblem = try c.decodeIfPresent(String.self, forKey: .kitProblem)
+        picking = try c.decodeIfPresent(KitPicking.self, forKey: .picking)
+        photos = try c.decode([KitPhoto].self, forKey: .photos)
+        pickingProblem = try c.decodeIfPresent(String.self, forKey: .pickingProblem)
+        // Shortages are an extra: anything unexpected in them mustn't stop the
+        // kit itself from loading.
+        shortages = try? c.decodeIfPresent([KitShortage].self, forKey: .shortages)
+        shortagesProblem = try? c.decodeIfPresent(String.self, forKey: .shortagesProblem)
+    }
 }
 
 struct FittingKit: Decodable {
@@ -148,4 +171,38 @@ struct KitPicksResponse: Decodable {
     let error: String?
     let reason: String?
     let unknownKeys: [String]?
+    /// How many open shortages this batch closed, by ticking those items as
+    /// fully picked. Nil from a server that predates shortages.
+    let shortagesResolved: Int?
+}
+
+// MARK: - Shortages
+//
+// "There aren't enough of this on the shelf." Reported against one item of the
+// picking list, shown on Cabinet Lab so it gets ordered, and shown to the next
+// picker on the item. Reporting the same item again updates the open one, and
+// it closes itself when the item is ticked as fully picked.
+
+struct KitShortage: Decodable, Identifiable, Hashable {
+    let id: String
+    /// The picking item's key, exactly as `KitPickItem.key`.
+    let key: String
+    let label: String?
+    /// How many more are needed.
+    let short: Int
+    let note: String?
+    let reportedBy: String
+    /// ISO 8601, UTC.
+    let reportedAt: String
+}
+
+/// The answer to POST …/kit/shortages and DELETE …/kit/shortages/:id,
+/// refusals included.
+struct KitShortageResponse: Decodable {
+    let ok: Bool
+    let shortage: KitShortage?
+    /// Every open shortage on the kit after the change.
+    let shortages: [KitShortage]?
+    let error: String?
+    let reason: String?
 }
