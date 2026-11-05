@@ -663,11 +663,17 @@ private struct KitItemRow: View {
         }
         .padding(.vertical, PaperSpace.xs)
         .overlay(alignment: .bottom) { PaperHairline(color: PaperColor.hairlineSoft) }
-        .contextMenu {
-            Button(openShortage == nil ? "Not enough on the shelf" : "Change the shortage", action: notEnough)
-            if let openShortage {
-                Button("Clear shortage", role: .destructive) { clearShortage(openShortage) }
-            }
+        // The same choices on a long press anywhere on the row.
+        .contextMenu { itemMenu }
+    }
+
+    /// What's under the ⋯: a part count, and the shelf being short.
+    @ViewBuilder
+    private var itemMenu: some View {
+        Button("Count some", action: count)
+        Button(openShortage == nil ? "Not enough on the shelf" : "Change shortage", action: notEnough)
+        if let openShortage {
+            Button("Clear shortage", role: .destructive) { clearShortage(openShortage) }
         }
     }
 
@@ -702,25 +708,29 @@ private struct KitItemRow: View {
             .accessibilityValue("\(item.picked) of \(item.required) picked")
             .accessibilityAddTraits(item.done ? .isSelected : [])
 
-            // Part-picked shows the count; otherwise it's a quiet way in to
-            // setting one, or reporting the shelf short.
-            Button(action: count) {
+            // ⋯ for the rest: counting some, or saying the shelf is short. A
+            // part-picked item shows its count there instead, so it stands out.
+            Menu {
+                itemMenu
+            } label: {
                 Group {
                     if item.picked > 0, !item.done {
                         Text("\(PaperFormat.int(item.picked)) of \(PaperFormat.int(item.required))")
+                            .paperType(.subhead, numeric: true)
                             .foregroundStyle(PaperColor.ink)
+                            .padding(.horizontal, PaperSpace.m)
+                            .overlay(Capsule().strokeBorder(PaperColor.border, lineWidth: 1).frame(height: 36))
                     } else {
-                        Text("Count").foregroundStyle(PaperColor.secondary)
+                        PaperIcon(.more, size: 18, color: PaperColor.secondary)
                     }
                 }
-                .paperType(.subhead, numeric: true)
-                .padding(.horizontal, PaperSpace.m)
-                .frame(minWidth: 76, minHeight: 44)
-                .overlay(Capsule().strokeBorder(PaperColor.border, lineWidth: 1))
+                .frame(minWidth: 52, minHeight: 44)
                 .contentShape(Rectangle())
             }
+            .menuStyle(.button)
             .buttonStyle(.plain)
-            .accessibilityLabel("Change the count for \(item.label)")
+            .accessibilityLabel("More for \(item.label)")
+            .accessibilityValue(item.picked > 0 && !item.done ? "\(item.picked) of \(item.required) picked" : "")
         }
     }
 
@@ -823,9 +833,10 @@ private struct KitCountSheet: View {
                     .buttonStyle(.paperPill(.outline, .regular, fullWidth: true))
                 }
 
-                // Swaps this sheet for the shortage one, so no dismiss here.
+                // Running out while counting is the moment to say so. Swaps
+                // this sheet for the shortage one, so no dismiss here.
                 Button("Not enough on the shelf", action: onNotEnough)
-                    .buttonStyle(.paperText(PaperColor.ink, .subhead, weight: .medium))
+                    .buttonStyle(.paperPill(.outline, .regular, fullWidth: true))
             }
             .padding(.top, PaperSpace.m)
         }
