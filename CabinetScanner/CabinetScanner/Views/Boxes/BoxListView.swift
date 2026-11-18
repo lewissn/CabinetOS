@@ -13,8 +13,10 @@ struct BoxListView: View {
     @State private var isStartingBox = false
     @EnvironmentObject private var toaster: Toaster
     @AppStorage("labels.printOnClose") private var printOnClose = true
+    private let back: String
 
-    init(consignment: Consignment, manifestId: String, manifestName: String) {
+    init(consignment: Consignment, manifestId: String, manifestName: String, back: String = "Consignments") {
+        self.back = back
         _viewModel = StateObject(wrappedValue: BoxListViewModel(
             consignment: consignment,
             manifestId: manifestId,
@@ -30,7 +32,7 @@ struct BoxListView: View {
     }
 
     var body: some View {
-        PushedScreen(back: "Consignments", scrolls: false) {
+        PushedScreen(back: back, scrolls: false) {
             List {
                 header.paperListRow()
 

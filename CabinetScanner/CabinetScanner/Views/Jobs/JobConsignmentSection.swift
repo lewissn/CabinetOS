@@ -30,6 +30,13 @@ final class JobConsignmentViewModel: ObservableObject {
     @Published var name: String = ""
     @Published var courier: String = ""
 
+    /// Whether the job can be packed panel by panel from its own ERP export.
+    /// Nil until read, and left nil when the read fails: the manual
+    /// consignment still works without it.
+    @Published private(set) var packing: JobPackingStatus?
+    @Published private(set) var isStartingPacking = false
+    @Published var packingError: String?
+
     let jobId: String
     private let service: JobIndexService
 
@@ -45,8 +52,11 @@ final class JobConsignmentViewModel: ObservableObject {
     var existing: [CourierConsignment] { info?.existing ?? [] }
     var canCompleteSteps: Bool { info?.canCompleteSteps ?? false }
 
+    var canPackPanels: Bool { packing?.isAvailable == true }
+
     func load() async {
         isLoading = true
+        async let packingRead = try? service.packingStatus(jobId: jobId)
         do {
             let loaded = try await service.consignmentInfo(jobId: jobId)
             info = loaded
@@ -63,7 +73,41 @@ final class JobConsignmentViewModel: ObservableObject {
         } catch {
             errorMessage = (error as? JobIndexError)?.errorDescription ?? error.localizedDescription
         }
+        packing = await packingRead
         isLoading = false
+    }
+
+    /// Start or carry on packing the job against its panel labels. Asked
+    /// afresh every time: once the job is ticked onto a courier manifest, the
+    /// packing manifest it started on is gone.
+    func startPacking() async -> PanelPacking? {
+        guard !isStartingPacking else { return nil }
+        isStartingPacking = true
+        packingError = nil
+        defer { isStartingPacking = false }
+
+        do {
+            let started = try await service.startPacking(jobId: jobId)
+            guard started.ok, let consignment = started.boxConsignment() else {
+                packingError = started.error ?? "Couldn't start packing. Try again in a moment."
+                HapticService.error()
+                return nil
+            }
+            return PanelPacking(
+                consignment: consignment,
+                manifestId: consignment.manifestId,
+                manifestName: started.manifestCode ?? ""
+            )
+        } catch {
+            packingError = (error as? JobIndexError)?.errorDescription ?? error.localizedDescription
+            HapticService.error()
+            return nil
+        }
+    }
+
+    /// Re-read after coming back from the boxes, for the panel count.
+    func refreshPacking() async {
+        if let read = try? await service.packingStatus(jobId: jobId) { packing = read }
     }
 
     func create() async {
@@ -141,6 +185,15 @@ struct JobConsignmentScope<Content: View>: View {
     }
 }
 
+/// Where the box screens open for a job packed panel by panel.
+struct PanelPacking: Hashable, Identifiable {
+    let consignment: Consignment
+    let manifestId: String
+    let manifestName: String
+
+    var id: String { consignment.id }
+}
+
 // MARK: - Quick action, near the top
 
 /// "Raise courier consignment", as a button you can't miss, under the step
@@ -149,6 +202,7 @@ struct CourierQuickAction: View {
     @EnvironmentObject private var viewModel: JobConsignmentViewModel
     @State private var showingRaise = false
     @State private var packing: ManualManifest?
+    @State private var panelPacking: PanelPacking?
 
     var body: some View {
         Group {
@@ -165,13 +219,10 @@ struct CourierQuickAction: View {
                         .foregroundStyle(PaperColor.secondary)
                         .lineLimit(1)
                 }
+            } else if let status = viewModel.packing, status.isAvailable {
+                panelPackingAction(status)
             } else if viewModel.info != nil {
-                Button {
-                    showingRaise = true
-                } label: {
-                    Label { Text("Raise courier consignment") } icon: { PaperIcon(.truck, size: 18) }
-                }
-                .buttonStyle(.paperPill(.outline, .large, fullWidth: true))
+                raiseButton
             }
         }
         .sheet(isPresented: $showingRaise) {
@@ -186,6 +237,74 @@ struct CourierQuickAction: View {
         .navigationDestination(item: $packing) { manifest in
             ManualManifestScreen(manifest: manifest, backLabel: "Job")
         }
+        .navigationDestination(item: $panelPacking) { target in
+            BoxListView(
+                consignment: target.consignment,
+                manifestId: target.manifestId,
+                manifestName: target.manifestName,
+                back: "Job"
+            )
+        }
+        .onChange(of: panelPacking) { _, now in
+            if now == nil { Task { await viewModel.refreshPacking() } }
+        }
+    }
+
+    private var raiseButton: some View {
+        Button {
+            showingRaise = true
+        } label: {
+            Label { Text("Raise courier consignment") } icon: { PaperIcon(.truck, size: 18) }
+        }
+        .buttonStyle(.paperPill(.outline, .large, fullWidth: true))
+    }
+
+    /// The job's ERP export has panel labels, so it's packed against its own
+    /// parts, on the same box screens as a courier manifest.
+    private func panelPackingAction(_ status: JobPackingStatus) -> some View {
+        let started = (status.packed ?? 0) > 0
+        return VStack(alignment: .leading, spacing: PaperSpace.xs) {
+            Button {
+                Task { panelPacking = await viewModel.startPacking() }
+            } label: {
+                if viewModel.isStartingPacking {
+                    ProgressView().tint(PaperColor.paper)
+                } else {
+                    Label { Text(started ? "Carry on packing" : "Start packing") } icon: {
+                        PaperIcon(.box, size: 18, color: PaperColor.paper)
+                    }
+                }
+            }
+            .buttonStyle(.paperPill(.ink, .large, fullWidth: true))
+            .disabled(viewModel.isStartingPacking)
+
+            Text(packingLine(status))
+                .paperType(.footnote)
+                .foregroundStyle(PaperColor.secondary)
+                .lineLimit(2)
+
+            if let error = viewModel.packingError {
+                Notice(text: error, tone: .held).padding(.top, PaperSpace.xs)
+            }
+
+            // For when the export is wrong, or the job ships some other way.
+            Button("Raise a manual consignment instead") { showingRaise = true }
+                .buttonStyle(.paperText(PaperColor.secondary, .footnote, weight: .semibold))
+                .padding(.top, PaperSpace.xxs)
+        }
+    }
+
+    private func packingLine(_ status: JobPackingStatus) -> String {
+        var parts: [String] = []
+        if let expected = status.expected {
+            parts.append("\(PaperFormat.int(status.packed ?? 0)) of \(PaperFormat.int(expected)) panels packed")
+        } else {
+            parts.append("Panel by panel, from the job's ERP export")
+        }
+        if status.state == "on-manifest", let code = status.manifestCode {
+            parts.append("on \(code)")
+        }
+        return parts.joined(separator: " · ")
     }
 }
 

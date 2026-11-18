@@ -597,6 +597,62 @@ struct CourierConsignmentStep: Decodable, Identifiable, Hashable {
     var id: String { stepName }
 }
 
+// MARK: - Packing a job panel by panel
+//
+// When the ERP export uploaded at the tooling check carries panel labels, the
+// job can be packed against its own parts before it's on a courier manifest:
+// the server gives it a packing manifest of its own and moves it, boxes and
+// scans, when the office ticks it onto a courier manifest.
+
+/// `GET /api/job-index/:id/packing`.
+struct JobPackingStatus: Decodable {
+    let ok: Bool
+    let available: Bool?
+    /// Why it can't be packed panel by panel, when it can't.
+    let reason: String?
+    /// "ready", "packing" or "on-manifest".
+    let state: String?
+    /// The courier manifest it's on, once ticked onto one.
+    let manifestCode: String?
+    let packed: Int?
+    let expected: Int?
+
+    var isAvailable: Bool { ok && available == true }
+}
+
+/// `POST /api/job-index/:id/packing`. Safe to repeat: it returns the same
+/// packing, or the courier manifest the job has since moved to.
+struct JobPackingStarted: Decodable {
+    let ok: Bool
+    let manifestId: String?
+    let manifestCode: String?
+    let onCourierManifest: Bool?
+    let consignment: PackingConsignment?
+    let error: String?
+
+    struct PackingConsignment: Decodable {
+        let id: String
+        let jobIdentifier: String
+        let status: String
+        let packedCount: Int
+        let expectedCount: Int
+    }
+
+    /// The consignment as the box screens know it.
+    func boxConsignment() -> Consignment? {
+        guard let manifestId, let c = consignment else { return nil }
+        return Consignment(
+            id: c.id,
+            manifestId: manifestId,
+            jobIdentifier: c.jobIdentifier,
+            customerName: c.jobIdentifier,
+            expectedItemCount: c.expectedCount,
+            packedItemCount: c.packedCount,
+            status: c.status == "completed" ? .complete : .open
+        )
+    }
+}
+
 /// One step of a job on the board: just enough to draw its step bar. The
 /// states are the job page's own (pending, ready, started, paused, idling,
 /// stopped, completed, unknown).

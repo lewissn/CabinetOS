@@ -402,6 +402,40 @@ final class JobIndexService {
         return try await post(url, body: EmptyBody(), timeout: 90)
     }
 
+    // MARK: - Packing a job panel by panel
+
+    /// Whether the job can be packed against its own panel labels, and where
+    /// that packing is: ready, packing, or on a courier manifest already.
+    func packingStatus(jobId: String) async throws -> JobPackingStatus {
+        if Configuration.isMock {
+            return JobPackingStatus(ok: true, available: true, reason: nil, state: "packing",
+                                    manifestCode: nil, packed: 0, expected: 24)
+        }
+        return try await get(URL(string: apiRoot + "/job-index/\(escaped(jobId))/packing"),
+                             missingMeans: .missingRoute("packing a job from its page"))
+    }
+
+    /// Start, or carry on with, the job's packing. Returns the manifest and
+    /// consignment the box screens scan against. Read it again each time the
+    /// job is opened: the packing manifest goes once the job moves to a
+    /// courier manifest.
+    func startPacking(jobId: String) async throws -> JobPackingStarted {
+        if Configuration.isMock {
+            // The mock despatch service's first consignment, so the box
+            // screens have something to show and nothing is written live.
+            return JobPackingStarted(
+                ok: true, manifestId: "manifest-001", manifestCode: "M-MOCK-J", onCourierManifest: false,
+                consignment: .init(id: "cons-001", jobIdentifier: "Lewis Nichols - 29248",
+                                   status: "scanning", packedCount: 0, expectedCount: 24),
+                error: nil
+            )
+        }
+        guard let url = URL(string: apiRoot + "/job-index/\(escaped(jobId))/packing") else {
+            throw JobIndexError.notConfigured
+        }
+        return try await post(url, body: EmptyBody())
+    }
+
     // MARK: - Fitting kit
 
     func fittingKit(jobId: String) async throws -> FittingKitResponse {
