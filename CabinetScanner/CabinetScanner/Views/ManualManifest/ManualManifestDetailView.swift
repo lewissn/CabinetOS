@@ -95,7 +95,8 @@ struct ManualManifestDetailView: View {
                 box: box,
                 manifestName: viewModel.manifest.manifestName,
                 courierName: viewModel.manifest.courier,
-                isManifestFinished: viewModel.manifest.isFinished
+                isManifestFinished: viewModel.manifest.isFinished,
+                jobIndexId: viewModel.manifest.jobIndexId
             )
         }
         .alert(boxToDelete.map { "Delete box \($0.boxNumber)?" } ?? "Delete box?", isPresented: .init(
@@ -272,12 +273,13 @@ struct ManualManifestDetailView: View {
 struct ManualBoxScreen: View {
     @StateObject private var viewModel: ManualBoxDetailViewModel
 
-    init(box: ManualManifestBox, manifestName: String, courierName: String?, isManifestFinished: Bool) {
+    init(box: ManualManifestBox, manifestName: String, courierName: String?, isManifestFinished: Bool, jobIndexId: String? = nil) {
         _viewModel = StateObject(wrappedValue: ManualBoxDetailViewModel(
             box: box,
             manifestName: manifestName,
             courierName: courierName,
-            isManifestFinished: isManifestFinished
+            isManifestFinished: isManifestFinished,
+            jobIndexId: jobIndexId
         ))
     }
 

@@ -664,3 +664,176 @@ struct BoardStep: Decodable, Hashable {
     /// Drawn as an outline, as the job page's track does.
     var isHalted: Bool { state == "paused" || state == "idling" || state == "stopped" }
 }
+
+// MARK: - A job's panels, for checking manual consignment scans
+
+/// `GET /api/job-index/:id/panels`: every panel on the job's labelled ERP
+/// export (uploaded at the tooling check), and those already in its
+/// consignments' boxes. The manual consignment's box screen (APC) reads it
+/// once per box and checks each label before saving it: it used to take a
+/// panel from any job without a word.
+///
+/// The rules are the website's `checkScan` (src/lib/despatch/job-panels.ts),
+/// which has the tests; keep the two the same.
+struct JobPanelList: Decodable {
+    let ok: Bool
+    let available: Bool?
+    /// Why scans can't be checked (no labelled export), when they can't.
+    let reason: String?
+    /// What the job's labels read, e.g. "Gary Mcshane - 13313".
+    let project: String?
+    let panels: [Panel]?
+    let packed: [PackedPanel]?
+    let error: String?
+
+    struct Panel: Decodable {
+        let cabinet: String
+        let part: String
+    }
+
+    struct PackedPanel: Decodable {
+        let project: String
+        let cabinet: String
+        let part: String
+        let boxId: String
+        let boxNumber: Int
+        let consignmentId: String
+        let consignmentName: String
+    }
+
+    var isAvailable: Bool { ok && available == true && project != nil }
+
+    enum Verdict: Equatable {
+        case ok
+        case refused(String)
+    }
+
+    private static func same(_ a: String, _ b: String) -> Bool {
+        a.trimmingCharacters(in: .whitespaces).lowercased() == b.trimmingCharacters(in: .whitespaces).lowercased()
+    }
+
+    /// Whether a scanned label belongs in box `boxId`. A repeat within that
+    /// box is the screen's own duplicate check, so it isn't refused here.
+    func check(_ scan: ScanTriplet, inBox boxId: String) -> Verdict {
+        guard isAvailable, let project else { return .ok }
+        if !Self.same(scan.projectName, project) {
+            return .refused("This panel is for \(scan.projectName), not this job (\(project)).")
+        }
+        let onJob = (panels ?? []).contains { Self.same($0.cabinet, scan.cabinetName) && Self.same($0.part, scan.partNumber) }
+        if !onJob {
+            return .refused("\(scan.cabinetName) part \(scan.partNumber) isn't on this job's ERP export.")
+        }
+        if let packed = (packed ?? []).first(where: {
+            $0.boxId != boxId && Self.same($0.project, scan.projectName) && Self.same($0.cabinet, scan.cabinetName) && Self.same($0.part, scan.partNumber)
+        }) {
+            return .refused("\(scan.cabinetName) part \(scan.partNumber) is already in box \(packed.boxNumber) of \(packed.consignmentName).")
+        }
+        return .ok
+    }
+}
+
+// MARK: - What's on the job: its production files
+
+/// `GET /api/job-index/:id/imports`, the parts the job page shows: the ERP
+/// export's and 3D model's summaries, the website's figures, and the
+/// cabinets on a labelled ERP export. Optional throughout: summaries stored
+/// by an older parser lack the newer fields, and the page shows what's there.
+struct JobProductionFiles: Decodable {
+    let ok: Bool
+    let erp: ErpFile?
+    let model: ModelFile?
+    let figures: Figures?
+    let cabinets: [ErpCabinet]?
+    let error: String?
+
+    struct ErpFile: Decodable {
+        let path: String
+        let uploadedAt: String
+        let summary: ErpSummary
+    }
+
+    struct ErpSummary: Decodable {
+        let parts: Int
+        let totalAreaM2: Double?
+        let packages: [Package]?
+        let unknownMaterials: [Unknown]?
+        let labelled: Bool?
+    }
+
+    struct Package: Decodable {
+        /// "mdf" or "signature".
+        let group: String
+        let areaM2: Double
+        let thinAreaM2: Double?
+        let parts: Int
+        let colours: [Colour]?
+    }
+
+    struct Colour: Decodable {
+        /// "Sage · 18 mm"
+        let colour: String
+        let areaM2: Double
+    }
+
+    struct Unknown: Decodable {
+        let material: String
+        let areaM2: Double
+        let parts: Int
+    }
+
+    struct ModelFile: Decodable {
+        let path: String
+        let uploadedAt: String
+        let summary: ModelSummary
+    }
+
+    struct ModelSummary: Decodable {
+        let cabinets: [ModelCabinet]
+        let panels: Int
+        let fronts: Int?
+        let warnings: [String]?
+    }
+
+    struct ModelCabinet: Decodable {
+        let name: String
+        let copies: Int
+        let panelsEach: Int
+    }
+
+    struct Figures: Decodable {
+        let panels: Int?
+        let areas: [Area]?
+        let edges: Int?
+        let edgeLengthM: Double?
+        let cabinets: Int?
+        let cabinetDesigns: Int?
+        let fronts: Int?
+        let mismatch: Mismatch?
+    }
+
+    struct Area: Decodable {
+        let group: String
+        let areaM2: Double
+    }
+
+    struct Mismatch: Decodable {
+        let erp: Int
+        let model: Int
+    }
+
+    /// A cabinet on the labelled ERP export, as its labels print it.
+    struct ErpCabinet: Decodable {
+        let name: String
+        let panels: Int
+        let parts: [String]
+    }
+
+    var hasAnything: Bool { erp != nil || model != nil }
+
+    /// "MDF" / "Signature", as the website names the two streams.
+    static func streamName(_ group: String) -> String {
+        group == "signature" ? "Signature" : group == "mdf" ? "MDF" : group.capitalized
+    }
+
+    static func m2(_ value: Double) -> String { String(format: "%.1f m²", value) }
+}

@@ -66,6 +66,19 @@ struct ManualBoxDetailView: View {
                     Notice(text: error, tone: .held).paperListRow(top: PaperSpace.l)
                 }
 
+                // A label refused for this job stays until the next scan is taken.
+                if canEdit, let refusal = viewModel.refusal {
+                    Notice(text: refusal, tone: .held, action: "Dismiss") { viewModel.refusal = nil }
+                        .paperListRow(top: PaperSpace.l)
+                }
+
+                if canEdit, let line = viewModel.panelCheckLine {
+                    Text(line)
+                        .paperType(.footnote)
+                        .foregroundStyle(viewModel.panelsAreChecked ? PaperColor.secondary : Tone.soon.textColor)
+                        .paperListRow(top: PaperSpace.m)
+                }
+
                 if canEdit {
                     openBoxActions.paperListRow(top: PaperSpace.xxl)
                 } else if box.isClosed {

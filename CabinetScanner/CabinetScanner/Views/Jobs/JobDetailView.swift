@@ -129,6 +129,10 @@ struct JobDetailView: View {
 
             if !detail.dates.isEmpty { despatchSection(detail).section() }
 
+            // What's on the job, from the files uploaded at the tooling check,
+            // as the website's job page says it.
+            JobContentsSection(jobId: jobId)
+
             FittingKitSection(jobId: jobId, jobTitle: detail.customer.name ?? knownTitle).section()
 
             // Directly under the workflow facts, because raising one and
@@ -822,5 +826,147 @@ private struct CurrentStepActions: View {
         }
         return step.action(.start)?.reason
             ?? "This step cannot be moved from the app."
+    }
+}
+
+// MARK: - On this job
+//
+// What the website's job page says about the job from its production files:
+// how many panels, how much board in each stream, which cabinets. Read from
+// the ERP export uploaded at the tooling check (and the 3D model, when there
+// is one). Says nothing, and takes no room, until a file is uploaded.
+
+struct JobContentsSection: View {
+    let jobId: String
+
+    @State private var files: JobProductionFiles?
+    @State private var service = JobIndexService()
+
+    var body: some View {
+        // A zero-height anchor so the read runs before there's anything to
+        // show: SwiftUI doesn't start a task on an empty group.
+        VStack(alignment: .leading, spacing: 0) {
+            Color.clear.frame(height: 0)
+            if let files, files.hasAnything {
+                VStack(alignment: .leading, spacing: 0) {
+                    PaperSectionHeader("On this job")
+                    if let mismatch = files.figures?.mismatch {
+                        Notice(text: "The ERP export lists \(Format.count(mismatch.erp, "panel")), but the 3D model has \(mismatch.model). One of them was exported before the last change.", tone: .soon)
+                            .padding(.bottom, PaperSpace.m)
+                    }
+                    figureRows(files)
+                    cabinetRows(files)
+                    cuttingRow(files)
+                    if let source = sourceLine(files) {
+                        Text(source)
+                            .paperType(.footnote)
+                            .foregroundStyle(PaperColor.tertiary)
+                            .padding(.top, PaperSpace.s)
+                    }
+                }
+                .section()
+            }
+        }
+        .task { await load() }
+    }
+
+    private func load() async {
+        // Nothing to show is the same as nothing uploaded: the page goes on
+        // without the section rather than with an error in the middle of it.
+        files = try? await service.productionFiles(jobId: jobId)
+    }
+
+    @ViewBuilder
+    private func figureRows(_ files: JobProductionFiles) -> some View {
+        let f = files.figures
+        if let panels = f?.panels ?? files.erp?.summary.parts {
+            FactRow(label: "Panels", value: "\(panels)")
+        }
+        ForEach(f?.areas ?? [], id: \.group) { area in
+            FactRow(label: "\(JobProductionFiles.streamName(area.group)) 18 mm", value: JobProductionFiles.m2(area.areaM2))
+        }
+        if let cabinets = f?.cabinets {
+            let designs = f?.cabinetDesigns
+            FactRow(label: "Cabinets", value: designs != nil && designs != cabinets ? "\(cabinets) · \(Format.count(designs!, "design"))" : "\(cabinets)")
+        } else if let erpCabinets = files.cabinets, !erpCabinets.isEmpty {
+            FactRow(label: "Cabinets", value: "\(erpCabinets.count)")
+        }
+        if let fronts = f?.fronts, fronts > 0 {
+            FactRow(label: "Doors and fronts", value: "\(fronts)")
+        }
+    }
+
+    /// The 3D model's cabinets when there is one (with how many are placed),
+    /// else the labelled ERP export's (with their panels).
+    @ViewBuilder
+    private func cabinetRows(_ files: JobProductionFiles) -> some View {
+        if let model = files.model?.summary, !model.cabinets.isEmpty {
+            CollapsibleRow("Cabinets", summary: model.cabinets.map(\.name).joined(separator: ", ")) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(model.cabinets.enumerated()), id: \.offset) { _, cabinet in
+                        FactRow(label: cabinet.name, value: "\(cabinet.copies) placed · \(Format.count(cabinet.panelsEach, "panel")) each")
+                    }
+                    if let warnings = model.warnings, !warnings.isEmpty {
+                        Notice(text: warnings.joined(separator: " "), tone: .soon).padding(.top, PaperSpace.s)
+                    }
+                }
+            }
+        } else if let cabinets = files.cabinets, !cabinets.isEmpty {
+            CollapsibleRow("Cabinets", summary: cabinets.map(\.name).joined(separator: ", ")) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(cabinets.enumerated()), id: \.offset) { _, cabinet in
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(alignment: .firstTextBaseline, spacing: PaperSpace.m) {
+                                Text(cabinet.name).paperType(.subhead).foregroundStyle(PaperColor.ink)
+                                Spacer(minLength: PaperSpace.m)
+                                Text(Format.count(cabinet.panels, "panel")).paperType(.subhead, numeric: true).foregroundStyle(PaperColor.body)
+                            }
+                            Text(cabinet.parts.joined(separator: ", "))
+                                .paperType(.footnote)
+                                .foregroundStyle(PaperColor.secondary)
+                                .lineLimit(4)
+                        }
+                        .padding(.vertical, PaperSpace.s)
+                        .overlay(alignment: .bottom) { PaperHairline(color: PaperColor.hairlineSoft) }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The ERP export's board by stream and colour, as the website's "Cutting by material".
+    @ViewBuilder
+    private func cuttingRow(_ files: JobProductionFiles) -> some View {
+        if let summary = files.erp?.summary, let packages = summary.packages, !packages.isEmpty {
+            CollapsibleRow("Cutting by material", summary: Format.count(summary.parts, "panel")) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(packages, id: \.group) { p in
+                        FactRow(label: JobProductionFiles.streamName(p.group), value: "\(JobProductionFiles.m2(p.areaM2)) · \(Format.count(p.parts, "panel"))")
+                        ForEach(p.colours ?? [], id: \.colour) { c in
+                            FactRow(label: "", value: "\(c.colour): \(JobProductionFiles.m2(c.areaM2))")
+                        }
+                    }
+                    if let unknown = summary.unknownMaterials, !unknown.isEmpty {
+                        Notice(text: "Board the planner doesn't know: " + unknown.map { "\($0.material) (\(Format.count($0.parts, "panel")))" }.joined(separator: "; ") + ".", tone: .soon)
+                            .padding(.top, PaperSpace.s)
+                    }
+                }
+            }
+        }
+    }
+
+    /// ", uploaded 3 days ago": the server's timestamps may carry fractions of a second.
+    private func uploaded(_ iso: String) -> String {
+        guard let date = DateFormatters.parseISO8601(iso) else { return "" }
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return ", uploaded " + f.localizedString(for: date, relativeTo: Date())
+    }
+
+    private func sourceLine(_ files: JobProductionFiles) -> String? {
+        var parts: [String] = []
+        if let erp = files.erp { parts.append("ERP export" + uploaded(erp.uploadedAt)) }
+        if let model = files.model { parts.append("3D model" + uploaded(model.uploadedAt)) }
+        return parts.isEmpty ? nil : "From the " + parts.joined(separator: " and the ")
     }
 }

@@ -436,6 +436,35 @@ final class JobIndexService {
         return try await post(url, body: EmptyBody())
     }
 
+    /// The job's panels and those already packed, for checking scans in a
+    /// manual consignment's box. See `JobPanelList`.
+    func jobPanels(jobId: String) async throws -> JobPanelList {
+        if Configuration.isMock {
+            return JobPanelList(ok: true, available: false, reason: "Scans aren't checked in the demo.",
+                                project: nil, panels: nil, packed: nil, error: nil)
+        }
+        return try await get(URL(string: apiRoot + "/job-index/\(escaped(jobId))/panels"),
+                             missingMeans: .missingRoute("checking scans against the job"))
+    }
+
+    /// What's on the job, from its production files (ERP export, 3D model).
+    func productionFiles(jobId: String) async throws -> JobProductionFiles {
+        if Configuration.isMock {
+            let json = """
+            {"ok":true,"erp":{"path":"SO 10734.csv","uploadedAt":"2026-11-20T10:00:00Z","summary":{"parts":26,"totalAreaM2":9.4,
+             "packages":[{"group":"mdf","areaM2":6.1,"thinAreaM2":1.2,"parts":18,"colours":[{"colour":"Paintable MDF · 18 mm","areaM2":6.1}]},
+             {"group":"signature","areaM2":2.1,"thinAreaM2":0,"parts":8,"colours":[{"colour":"Sage · 18 mm","areaM2":2.1}]}],"labelled":true}},
+             "model":null,"figures":{"panels":26,"areas":[{"group":"mdf","areaM2":6.1},{"group":"signature","areaM2":2.1}],
+             "edges":104,"edgeLengthM":88.2,"cabinets":null,"cabinetDesigns":null,"fronts":null,"mismatch":null},
+             "cabinets":[{"name":"DMC","panels":6,"parts":["Top","Base","Left side","Right side","Back","Shelf"]},
+             {"name":"LDC","panels":8,"parts":["Top","Base","Left side","Right side","Back","Shelf","Door 1","Door 2"]}]}
+            """
+            return try decoder.decode(JobProductionFiles.self, from: Data(json.utf8))
+        }
+        return try await get(URL(string: apiRoot + "/job-index/\(escaped(jobId))/imports"),
+                             missingMeans: .missingRoute("the job's production files"))
+    }
+
     // MARK: - Fitting kit
 
     func fittingKit(jobId: String) async throws -> FittingKitResponse {

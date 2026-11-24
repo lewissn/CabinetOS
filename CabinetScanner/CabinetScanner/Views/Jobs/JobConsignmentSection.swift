@@ -43,6 +43,18 @@ final class JobConsignmentViewModel: ObservableObject {
     /// What the bench actually uses, by volume: APC on 504 of 554.
     let couriers = ["APC", "Collection", "Other"]
 
+    /// The courier last filled in from ShopVOX: one still showing it wasn't
+    /// chosen by hand, so it follows ShopVOX.
+    private var lastSuggestedCourier = ""
+
+    /// "APC Next Day" is APC; "Collect From Us" is Collection; anything else
+    /// is left for the person to choose.
+    static func courier(for method: String?, from couriers: [String]) -> String {
+        guard let method, !method.isEmpty else { return "" }
+        if method.localizedCaseInsensitiveContains("collect") { return couriers.contains("Collection") ? "Collection" : "" }
+        return couriers.first { method.localizedCaseInsensitiveContains($0) } ?? ""
+    }
+
     init(jobId: String, service: JobIndexService = JobIndexService()) {
         self.jobId = jobId
         self.service = service
@@ -61,14 +73,13 @@ final class JobConsignmentViewModel: ObservableObject {
             let loaded = try await service.consignmentInfo(jobId: jobId)
             info = loaded
             if name.isEmpty { name = loaded.suggestedName }
-            if courier.isEmpty {
-                // Match the ShopVOX shipping method to a courier we use, and
-                // otherwise leave it for the person to choose rather than
-                // guessing at a carrier.
-                courier = couriers.first {
-                    loaded.suggestedCourier?.localizedCaseInsensitiveContains($0) == true
-                } ?? ""
-            }
+            // Match the ShopVOX shipping method to a courier we use, and
+            // otherwise leave it for the person to choose rather than
+            // guessing at a carrier. Follow it when it changes in ShopVOX
+            // (BJS to APC, say) unless the person picked one themselves.
+            let suggested = Self.courier(for: loaded.suggestedCourier, from: couriers)
+            if courier.isEmpty || courier == lastSuggestedCourier { courier = suggested }
+            lastSuggestedCourier = suggested
             errorMessage = nil
         } catch {
             errorMessage = (error as? JobIndexError)?.errorDescription ?? error.localizedDescription
